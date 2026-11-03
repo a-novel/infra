@@ -9,6 +9,7 @@ import {
   paths,
   pinRequest,
   pins,
+  requestReview,
   rewrite,
   run,
 } from "./pin-release.mjs";
@@ -90,7 +91,7 @@ describe("pinRequest", () => {
       server,
     );
     assert.deepEqual(request.labels, ["dependencies", holdLabel]);
-    assert.deepEqual(request.reviewers, ["maintainers-infra"]);
+    assert.equal(request.review, true);
     assert.match(
       request.body,
       /Approve once every service and platform that calls a-novel\/service-authentication runs a version that handles the change\.$/,
@@ -103,9 +104,54 @@ describe("pinRequest", () => {
       {
         body: "Deploys [a-novel/service-authentication v2.23.3](https://github.com/a-novel/service-authentication/releases/tag/v2.23.3), whose release published every image pinned here.",
         labels: ["dependencies"],
-        reviewers: [],
+        review: false,
       },
     );
+  });
+});
+
+describe("requestReview", () => {
+  it("asks every maintainer, and no bot", () => {
+    const calls = [];
+    const call = (...args) => {
+      calls.push(args);
+      return args[1].includes("/collaborators") ? '["kushuh"]' : "";
+    };
+    assert.deepEqual(requestReview("a-novel/infra", "1477", call), ["kushuh"]);
+    assert.ok(
+      calls[0][1].endsWith("/collaborators?permission=maintain&per_page=100"),
+    );
+    assert.ok(calls[0][3].includes('select(.type == "User")'));
+    assert.deepEqual(calls[1], [
+      "api",
+      "repos/a-novel/infra/pulls/1477/requested_reviewers",
+      "-f",
+      "reviewers[]=kushuh",
+      "--silent",
+    ]);
+  });
+
+  it("warns instead of failing when GitHub refuses the request", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const call = (...args) => {
+      if (args[1].includes("/requested_reviewers"))
+        throw new Error("Validation Failed (HTTP 422)");
+      return '["kushuh"]';
+    };
+    assert.deepEqual(requestReview("a-novel/infra", "1477", call), []);
+    assert.match(
+      log.mock.calls[0].arguments[0],
+      /^::warning::Could not request a review of a-novel\/infra#1477: Validation Failed/,
+    );
+  });
+
+  it("warns when nobody maintains the repository", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    assert.deepEqual(
+      requestReview("a-novel/infra", "1477", () => "[]"),
+      [],
+    );
+    assert.match(log.mock.calls[0].arguments[0], /no maintainer to ask$/);
   });
 });
 
