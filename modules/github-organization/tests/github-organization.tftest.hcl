@@ -24,6 +24,7 @@ mock_provider "github" {
   #       environment: release
   #     report-coverage:
   #       runs-on: ubuntu-24.04
+  #       environment: plan
   #     publish:
   #       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
   #       runs-on: ubuntu-24.04
@@ -35,7 +36,7 @@ mock_provider "github" {
     defaults = {
       code = 200
       body = <<-EOT
-        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICBwdWJsaXNoOgogICAgaWY6IGdpdGh1Yi5ldmVudF9uYW1lID09ICdwdXNo\nJyAmJiBnaXRodWIucmVmID09ICdyZWZzL2hlYWRzL21hc3RlcicKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6CiAgICAgIG5h\nbWU6IGdvdmVybmFuY2UKICAgIHN0ZXBzOgogICAgICAtIHJ1bjogc2lnbiAi\nJHt7IHNlY3JldHMuQUdFTlRfQk9UX1BSSVZBVEVfS0VZIH19Igo=\n", "encoding": "base64"}
+        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICAgIGVudmlyb25tZW50OiBwbGFuCiAgcHVibGlzaDoKICAgIGlmOiBnaXRo\ndWIuZXZlbnRfbmFtZSA9PSAncHVzaCcgJiYgZ2l0aHViLnJlZiA9PSAncmVm\ncy9oZWFkcy9tYXN0ZXInCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAg\nIGVudmlyb25tZW50OgogICAgICBuYW1lOiBnb3Zlcm5hbmNlCiAgICBzdGVw\nczoKICAgICAgLSBydW46IHNpZ24gIiR7eyBzZWNyZXRzLkFHRU5UX0JPVF9Q\nUklWQVRFX0tFWSB9fSIK\n", "encoding": "base64"}
       EOT
     }
   }
@@ -143,7 +144,7 @@ run "derives_config_from_the_workflows" {
   }
 
   assert {
-    condition     = local.discovered["service-genai"].environments == toset(["release", "governance"])
+    condition     = local.discovered["service-genai"].environments == toset(["release", "plan", "governance"])
     error_message = "A job names its environment directly or as the name of an environment map."
   }
 
@@ -173,8 +174,17 @@ run "derives_config_from_the_workflows" {
   }
 
   assert {
-    condition     = toset(keys(github_repository_environment.this)) == toset(["service-genai:release", "service-genai:governance", ".github:release", ".github:governance", "infra:release", "infra:governance"])
-    error_message = "A repository gets the release environment its workflows name, and governance when they name a privileged secret."
+    condition     = toset(keys(github_repository_environment.this)) == toset(["service-genai:release", "service-genai:governance", "service-genai:plan", ".github:release", ".github:governance", ".github:plan", "infra:release", "infra:governance", "infra:plan"])
+    error_message = "A repository gets the release and plan environments its workflows name, and governance when they name a privileged secret."
+  }
+
+  assert {
+    condition = (
+      length(github_repository_environment.this["infra:plan"].deployment_branch_policy) == 0 &&
+      length(one(github_repository_environment.this["infra:plan"].reviewers).teams) > 0 &&
+      !github_repository_environment.this["infra:plan"].prevent_self_review
+    )
+    error_message = "A pull request's plan waits for a maintainer, an owner or an admin, on any branch, its author included."
   }
 
   assert {
@@ -183,7 +193,7 @@ run "derives_config_from_the_workflows" {
   }
 
   assert {
-    condition     = jsonencode(output.environments) == jsonencode([".github:governance", ".github:release", "infra:governance", "infra:release", "service-genai:governance", "service-genai:release"])
+    condition     = jsonencode(output.environments) == jsonencode([".github:governance", ".github:plan", ".github:release", "infra:governance", "infra:plan", "infra:release", "service-genai:governance", "service-genai:plan", "service-genai:release"])
     error_message = "Prune reads the deployment patterns of the managed environments alone, so GitHub's own and infra's deploy environments keep theirs."
   }
 

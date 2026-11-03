@@ -1,7 +1,8 @@
 # The environments whose secrets only refs a ruleset guards may read: release, where every job waits
 # for an admin team or the repository's owners; governance, which holds the privileged keys its
-# workflows name; and sourcemaps. GitHub creates the others, github-pages and copilot among them, so
-# they are left alone.
+# workflows name; and sourcemaps. Plan holds a pull request's jobs that read production until a
+# maintainer, an owner or an admin approves them, on any branch. GitHub creates the others,
+# github-pages and copilot among them, so they are left alone.
 locals {
   environments = merge([
     for name in local.ready : {
@@ -9,14 +10,16 @@ locals {
         contains(local.discovered[name].environments, "release") ? ["release"] : [],
         length(setintersection(local.discovered[name].secrets, var.governance_secrets)) > 0 ? ["governance"] : [],
         contains(local.discovered[name].environments, "sourcemaps") ? ["sourcemaps"] : [],
+        contains(local.discovered[name].environments, "plan") ? ["plan"] : [],
       ) : "${name}:${environment}" => { repository = name, environment = environment }
     }
   ]...)
 
   # The default branch, plus release lines and version tags where the tags ruleset limits who creates
-  # them. A workflow on any other ref never unlocks an environment.
+  # them. A workflow on any other ref never unlocks an environment. Plan admits every ref, since its
+  # reviewers are its gate.
   deployment_policies = merge([
-    for key, environment in local.environments : {
+    for key, environment in local.environments : environment.environment == "plan" ? {} : {
       for policy in concat(
         [{ type = "branch", pattern = local.default_branch }],
         var.repositories[environment.repository].tags_ruleset ? [{ type = "branch", pattern = "release/v*" }, { type = "tag", pattern = "v*" }] : [],
@@ -37,21 +40,28 @@ resource "github_repository_environment" "this" {
   can_admins_bypass   = true
   prevent_self_review = false
 
-  # The person who dispatched a release may approve it, and no bot can.
+  # The person who dispatched a release, or who opened a pull request, may approve it, and no bot can.
   dynamic "reviewers" {
-    for_each = each.value.environment == "release" ? [1] : []
+    for_each = contains(["release", "plan"], each.value.environment) ? [1] : []
 
     content {
-      teams = [
-        tonumber(data.github_team.admin.id),
-        tonumber(github_team.area["owners-${var.repositories[each.value.repository].class}"].id),
-      ]
+      teams = concat(
+        [
+          tonumber(data.github_team.admin.id),
+          tonumber(github_team.area["owners-${var.repositories[each.value.repository].class}"].id),
+        ],
+        each.value.environment == "plan" ? [tonumber(github_team.area["maintainers-${var.repositories[each.value.repository].class}"].id)] : [],
+      )
     }
   }
 
-  deployment_branch_policy {
-    protected_branches     = false
-    custom_branch_policies = true
+  dynamic "deployment_branch_policy" {
+    for_each = each.value.environment == "plan" ? [] : [1]
+
+    content {
+      protected_branches     = false
+      custom_branch_policies = true
+    }
   }
 }
 

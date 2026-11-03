@@ -51,15 +51,26 @@ locals {
   }
 
   # Each boundary trusts exact master workflows, keyed to the GitHub
-  # environment they must run in (null for none). Plan also trusts pull requests
-  # from this repository; GitHub never issues OIDC tokens to fork pull requests.
+  # environment they must run in (null for none). The two plan boundaries also
+  # trust this repository's pull requests, the reviewed one only once a reviewer
+  # of the plan environment admits the run; GitHub never issues OIDC tokens to
+  # fork pull requests.
   trust_boundaries = {
     plan = {
       service_account_id = "infra-plan"
       display_name       = "Infra plan and drift"
       provider_id        = "github-plan"
       workflows          = { "drift.yaml" = null }
-      pull_requests      = "main.yaml"
+      pull_requests      = { workflow = "main.yaml", environment = null }
+    }
+    # Plans the roots that read a third party's credentials, Grafana's and GitHub's, so a pull
+    # request reaches those only once a reviewer admits its run.
+    reviewed_plan = {
+      service_account_id = "infra-reviewed-plan"
+      display_name       = "Infra reviewed plans"
+      provider_id        = "github-reviewed-plan"
+      workflows          = { "drift.yaml" = null }
+      pull_requests      = { workflow = "main.yaml", environment = "plan" }
     }
     foundation = {
       service_account_id = "infra-foundation"

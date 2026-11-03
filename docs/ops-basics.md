@@ -39,7 +39,7 @@ Git is the source of truth for production. Every change is a pull request, which
 will change. Merging it deploys it, and nobody applies by hand.
 
 ```text
-pull request ──► checks: validate, lint, test, scan, one plan per root
+pull request ──► checks: validate, lint, test, scan, one plan per root (Grafana and GitHub admitted by a maintainer)
                   │  plan deletes or unprotects something? ─► needs allow-resource-deletion
                   │  plan upgrades a PostgreSQL major?      ─► needs allow-downtime, during a planned downtime
                   ▼
@@ -51,8 +51,12 @@ deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, w
 ```
 
 1. **The pull request.** CI validates and tests every root, lints the repository, scans it, and plans
-   each root with a read-only identity, the GitHub root only when the merge would apply it. The plans
-   appear in the job summaries.
+   each root with a read-only identity. The Grafana and GitHub roots plan only when the merge would
+   apply them, since their plans read a third party's credentials: they wait in the `plan`
+   environment until a maintainer, an owner or an admin reviews the pull request's code and
+   approves the run, under **Review pending deployments** on the run's page. Each push and each
+   label change starts a run to approve. Every other pull request skips them. The plans appear in
+   the job summaries.
 2. **The policy.** Two kinds of plan fail until a maintainer adds a label:
    - a plan that deletes, replaces or forgets a resource, or weakens its protection, needs
      `allow-resource-deletion`, as does a ruleset or deployment pattern the GitHub root would
@@ -89,17 +93,33 @@ GitHub Actions gets short-lived Google credentials through **Workload Identity F
 No service-account key exists anywhere. The trust conditions live in
 [`bootstrap/identity.tf`](../bootstrap/identity.tf).
 
-| Identity           | Used by                                                                                        | Can                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `infra-plan`       | pull-request plans, the drift check                                                            | read everything a plan needs                        |
-| `infra-foundation` | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                | change everything                                   |
-| `infra-downtime`   | `downtime.yaml`, on `master`                                                                   | start and cancel the planned downtime announcements |
-| `infra-github`     | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment | apply the GitHub root, with no Google Cloud role    |
-| `infra-drift`      | the GitHub root's drift check in `drift.yaml`, on `master`                                     | read the GitHub Deploy App keys and the state       |
-| `infra-grafana`    | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                | apply the Grafana root, with no Google Cloud role   |
+| Identity              | Used by                                                                                        | Can                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `infra-plan`          | pull-request plans of the Google Cloud roots, the drift check                                  | read what those plans need, as listed below         |
+| `infra-reviewed-plan` | pull-request plans of the Grafana and GitHub roots, in the `plan` environment                  | read those roots' plan credentials, as listed below |
+| `infra-foundation`    | `deploy.yaml` and `recovery.yaml`, on `master`, in the `production` environment                | change everything                                   |
+| `infra-downtime`      | `downtime.yaml`, on `master`                                                                   | start and cancel the planned downtime announcements |
+| `infra-github`        | the GitHub root's `deploy.yaml` job and `sweep.yaml`, on `master`, in the `github` environment | apply the GitHub root, with no Google Cloud role    |
+| `infra-drift`         | the GitHub root's drift check in `drift.yaml`, on `master`                                     | read the GitHub Deploy App keys and the state       |
+| `infra-grafana`       | the Grafana root's `deploy.yaml` job, on `master`, in the `grafana` environment                | apply the Grafana root, with no Google Cloud role   |
 
 GitHub issues no OIDC token to pull requests from forks, so outside contributors get no cloud
-access.
+access. A same-repository pull request mints `infra-plan` for the roots that touch only Google
+Cloud, ungated. It mints `infra-reviewed-plan` for the Grafana and GitHub roots only once a reviewer
+of the `plan` environment admits its run. `infra-plan` reads:
+
+- **every root's state**, which holds no secret value;
+- **in the management project**, the configuration of IAM, service accounts, Workload Identity,
+  Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, never a secret's value
+  once the Grafana and GitHub plans have moved to `infra-reviewed-plan`;
+- **in the workload project**, what the Viewer role reads, except Cloud Logging and Cloud Trace,
+  which an organization deny policy removes. On the cluster, it reads every object but Secrets, and
+  the pods' logs, which Viewer grants and no deny policy can remove;
+- **the organization's access policies**, which hold the service perimeter.
+
+`infra-reviewed-plan` reads the Grafana and GitHub roots' state, the Grafana plan token and the
+GitHub Plan App keys. Through them it reads the folders, dashboards and alerting configuration the
+Grafana root manages, but no data source, and both organizations' repository configuration.
 
 Human operators are the members of bootstrap's `operator_principals` and foundation's
 `database_operator_principals`. They hold three sets of roles:
