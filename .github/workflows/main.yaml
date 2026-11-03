@@ -433,8 +433,8 @@ jobs:
         with:
           root: environments/production/grafana
           allow_deletion: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_REVIEWED_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_REVIEWED_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
   # Plans repository config. Deploys and the drift check refresh it with the Deploy App. Each plan
@@ -462,8 +462,8 @@ jobs:
         with:
           root: environments/production/github
           allow_deletion: ${{ env.ALLOW_DELETION }}
-          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_REVIEWED_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_REVIEWED_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
           # GitHub hides bypass lists, merge settings and security settings from the read-only Plan
           # App, so the plan compares the configuration with what the last deploy applied.

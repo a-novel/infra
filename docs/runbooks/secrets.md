@@ -140,7 +140,7 @@ names the permission the role lacks.
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
 the Grafana root's `token_versions`. Pull requests and the drift check read the plan token as
-`infra-plan`, and deploys the deploy token as `infra-grafana`. Create the plan token with a 90-day
+`infra-reviewed-plan`, and deploys the deploy token as `infra-grafana`. Create the plan token with a 90-day
 expiry, under the account's **Add service account token**, and replace it every 60 days, so a lost
 or leaked copy lapses on its own. The deploy token, which only master's deploy reads, has none. For
 a leak, delete the token in Grafana as well as disabling its version.
@@ -158,12 +158,12 @@ realm, then a token without an expiry:
 
 | Secret                                  | Access policy  | Scopes                                                                                                        |
 | --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
-| `production-grafana-cloud-plan-token`   | `infra-plan`   | `stacks:read`, `frontend-observability:read`                                                                  |
+| `production-grafana-cloud-plan-token`   | none           | `stacks:read`, `frontend-observability:read`                                                                  |
 | `production-grafana-cloud-deploy-token` | `infra-deploy` | `stacks:read`, `frontend-observability:read`, `frontend-observability:write`, `frontend-observability:delete` |
 
-Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret). Pull requests
-and the drift check read the plan token as `infra-plan`, and deploys the deploy token as
-`infra-grafana`. For a leak, delete the token in the Cloud Portal as well as disabling its version.
+Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret). No plan reads
+the plan token, since the Grafana root holds no Frontend Observability resource yet, and deploys
+read the deploy token as `infra-grafana`. For a leak, delete the token in the Cloud Portal as well as disabling its version.
 
 ## GitHub root keys
 
@@ -180,7 +180,7 @@ gcloud secrets versions add "$SECRET" --project=a-novel-management-prod --data-f
 
 | Secret                               | App                     | Read by                                                                 |
 | ------------------------------------ | ----------------------- | ----------------------------------------------------------------------- |
-| `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-plan`, for pull requests                                         |
+| `production-github-plan-key-<org>`   | the Plan App, read-only | `infra-reviewed-plan`, for pull requests                                |
 | `production-github-deploy-key-<org>` | the Deploy App          | `infra-github` for deploys and the sweep, `infra-drift` for drift plans |
 
 Replace each Plan App key every 90 days, since pull requests read it. Generate a new key, add it
