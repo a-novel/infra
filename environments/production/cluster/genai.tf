@@ -44,7 +44,7 @@ module "genai_grpc" {
   env             = local.genai_grpc_env
   secret_env      = local.genai_secret_env
   ca_secret       = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName
-  resources       = { cpu = "250m", memory = "2Gi" }
+  resources       = { cpu = "100m", memory = "2Gi" }
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 
