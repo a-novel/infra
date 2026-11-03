@@ -122,13 +122,14 @@ runs:
           [ "$status" -ne 1 ]
         }
         # transient tells whether a failed attempt is worth repeating. Cloud Storage answers 503 now
-        # and then while OpenTofu reads the state, and a lost answer to the lock's write leaves this
+        # and then while OpenTofu reads the state, the credential exchange in front of it does too
+        # ("credentials: status code 503"), and a lost answer to the lock's write leaves this
         # runner's own lock (own-lock.mjs), which transient releases.
         transient() {
           local id
           id="$(node .github/scripts/own-lock.mjs "$errors")" || return 1
           if [ -z "$id" ]; then
-            grep -Eq '"code": 50[234]|UNAVAILABLE' "$errors"
+            grep -Eq '"code": 50[234]|status code 50[234]|UNAVAILABLE' "$errors"
             return
           fi
           echo "::warning::tofu failed on this runner's own state lock $id; releasing it."
