@@ -3,11 +3,12 @@ locals {
   # service's root pins them. This root's own deploy copies them into the service's repository,
   # which foundation keeps in the cluster's region: its control plane's zone without the letter.
   release_roles = {
-    account        = ["web"]
-    authentication = ["database", "maintenance", "migrations", "rest"]
-    genai          = ["database", "grpc", "migrations", "sweep"]
-    json-keys      = ["database", "grpc", "migrations", "rotatekeys"]
-    studio         = ["web"]
+    account          = ["web"]
+    authentication   = ["database", "maintenance", "migrations", "rest"]
+    genai            = ["database", "grpc", "migrations", "sweep"]
+    json-keys        = ["database", "grpc", "migrations", "rotatekeys"]
+    narrative-engine = ["database", "migrations", "rest"]
+    studio           = ["web"]
   }
   release_registry = "${regex("^(.+)-[a-z]$", local.cluster.location)[0]}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}"
   release_pins     = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }

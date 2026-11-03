@@ -58,9 +58,10 @@ override_data {
   values = {
     outputs = {
       barman_buckets = {
-        authentication = "mock-barman-authentication"
-        genai          = "mock-barman-genai"
-        json-keys      = "mock-barman-json-keys"
+        authentication   = "mock-barman-authentication"
+        genai            = "mock-barman-genai"
+        json-keys        = "mock-barman-json-keys"
+        narrative-engine = "mock-barman-narrative-engine"
       }
     }
   }
@@ -220,6 +221,7 @@ run "sends_every_signal_to_grafana_through_alloy" {
       { env = local.authentication_env, kind = "api" },
       { env = local.genai_grpc_env, kind = "api" },
       { env = local.genai_sweep_env, kind = "job" },
+      { env = local.narrative_engine_env, kind = "api" },
       { env = { for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
       { env = { for env in one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
       ], [for env in values(local.platform_env) : { env = env, kind = "api" }]) :
@@ -331,7 +333,7 @@ run "keeps_each_database_available_and_backed_up" {
   }
 
   assert {
-    condition = alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0]] :
+    condition = alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0], module.narrative_engine_rest[0]] :
       workload.pod_annotations["a-novel.io/database-lineage"] == var.backup_server_name
     ])
     error_message = "Every database client's pods must roll with a new lineage, once its database serves."
@@ -367,9 +369,10 @@ run "fits_each_database_in_its_connections" {
 
   assert {
     condition = alltrue([for database, workloads in {
-      authentication = tonumber(local.authentication_env.POSTGRES_MAX_OPEN_CONNS) * (module.authentication_rest[0].autoscaler.spec.max_replicas + 1)
-      genai          = tonumber(local.genai_grpc_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_grpc[0].autoscaler.spec.max_replicas + 1) + tonumber(local.genai_sweep_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_sweep[0].autoscaler.spec.max_replicas + 1)
-      json-keys      = tonumber(local.json_keys_env.POSTGRES_MAX_OPEN_CONNS) * (module.json_keys_grpc[0].autoscaler.spec.max_replicas + 1)
+      authentication   = tonumber(local.authentication_env.POSTGRES_MAX_OPEN_CONNS) * (module.authentication_rest[0].autoscaler.spec.max_replicas + 1)
+      genai            = tonumber(local.genai_grpc_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_grpc[0].autoscaler.spec.max_replicas + 1) + tonumber(local.genai_sweep_env.POSTGRES_MAX_OPEN_CONNS) * (module.genai_sweep[0].autoscaler.spec.max_replicas + 1)
+      json-keys        = tonumber(local.json_keys_env.POSTGRES_MAX_OPEN_CONNS) * (module.json_keys_grpc[0].autoscaler.spec.max_replicas + 1)
+      narrative-engine = tonumber(local.narrative_engine_env.POSTGRES_MAX_OPEN_CONNS) * (module.narrative_engine_rest[0].autoscaler.spec.max_replicas + 1)
       } : workloads + 2 + sum(concat(
         [one([for env in one(kubernetes_job_v1.migrations[database].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"])],
         [for name, job in kubernetes_cron_job_v1.scheduled : one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"]) if local.scheduled_jobs[name].service == database],
@@ -400,7 +403,7 @@ run "runs_each_release_from_its_private_repository" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "genai", "json-keys"]) &&
+      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "genai", "json-keys", "narrative-engine"]) &&
       alltrue([for service, job in kubernetes_job_v1.migrations :
         startswith(job.metadata[0].name, "migrations-${substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)}-") &&
         endswith(job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
@@ -523,7 +526,7 @@ run "runs_every_workload_on_two_pods_or_more" {
   # The module adds a disruption budget once min exceeds 1. GenAI's maximum also bounds its OpenAI
   # calls.
   assert {
-    condition = alltrue([for workload in concat([module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0]], values(module.platform_web)) :
+    condition = alltrue([for workload in concat([module.json_keys_grpc[0], module.authentication_rest[0], module.genai_grpc[0], module.genai_sweep[0], module.narrative_engine_rest[0]], values(module.platform_web)) :
       workload.autoscaler.spec.min_replicas == 2 && workload.autoscaler.spec.max_replicas == 3
     ])
     error_message = "Every workload must run two to three pods: two keep it serving through a lost pod or node, and its autoscaler adds a third."
@@ -549,10 +552,11 @@ run "runs_json_keys" {
   assert {
     condition = (
       length(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress) == 1 &&
-      toset([for peer in one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]]) == toset(["rest", "smoke"]) &&
+      [for peer in one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "json-keys")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["authentication:rest", "narrative-engine:rest", "json-keys:smoke"] &&
+      toset(split(",", local.json_keys_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:authentication:rest", "system:serviceaccount:narrative-engine:rest", "system:serviceaccount:json-keys:smoke"]) &&
       one(one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).ports).port == local.json_keys_env.GRPC_PORT
     )
-    error_message = "Only Authentication's API and the smoke check may call JSON Keys, on its TLS port alone."
+    error_message = "Only Authentication's and narrative-engine's APIs and the smoke check may call JSON Keys, on its TLS port alone."
   }
 }
 
@@ -737,12 +741,11 @@ run "runs_genai" {
 
   assert {
     condition = (
-      local.genai_grpc_env.SERVICE_TOKEN_CALLERS == "system:serviceaccount:genai:smoke" &&
+      toset(split(",", local.genai_grpc_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:narrative-engine:rest", "system:serviceaccount:genai:smoke"]) &&
       [for rule in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress : [for port in rule.ports : port.port]] == [[local.genai_grpc_env.GRPC_PORT], [local.genai_grpc_env.METRICS_PORT]] &&
-      [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
-      length(one(one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from).namespace_selector) == 0
+      [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "genai")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["narrative-engine:rest", "genai:smoke"]
     )
-    error_message = "Only GenAI's own smoke check may call its server."
+    error_message = "Only narrative-engine's API and GenAI's own smoke check may call its server."
   }
 
   # Each peer of the metrics rule names its source range or namespace, and one of them only.
@@ -758,9 +761,52 @@ run "runs_genai" {
       [for metric in module.genai_grpc[0].autoscaler.spec.metric : metric.type] == ["Resource", "Pods"] &&
       one(one(module.genai_grpc[0].autoscaler.spec.metric[1].pods).target).average_value == tostring(floor(tonumber(local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS) * 60 / 100)) &&
       module.genai_grpc[0].autoscaler.gauge.spec.metrics[0].pod.containers[0].endpoint.port == tonumber(local.genai_grpc_env.METRICS_PORT) &&
-      alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_sweep[0], module.platform_web["studio"]] : workload.autoscaler.gauge == null])
+      alltrue([for workload in [module.json_keys_grpc[0], module.authentication_rest[0], module.genai_sweep[0], module.narrative_engine_rest[0], module.platform_web["studio"]] : workload.autoscaler.gauge == null])
     )
     error_message = "GenAI's server alone must scale on its calls in flight, beside CPU, at 60% of its call cap per pod, read on its metrics port."
+  }
+}
+
+run "runs_narrative_engine" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      length([for name in keys(local.narrative_engine_env) : name if startswith(name, "SENTRY_")]) == 0 &&
+      local.narrative_engine_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["narrative-engine"].manifest.spec.dnsNames) &&
+      local.narrative_engine_env.SERVICE_TOKEN_ISSUER == local.json_keys_env.SERVICE_TOKEN_ISSUER
+    )
+    error_message = "Narrative-engine must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database by its certificate's name."
+  }
+
+  # The callees serve TLS only, so a plaintext dial reaches neither.
+  assert {
+    condition = alltrue([for callee in [
+      { prefix = "SERVICE_JSON_KEYS", namespace = "json-keys", workload = module.json_keys_grpc[0], env = local.json_keys_env, policy = kubernetes_network_policy_v1.json_keys_grpc },
+      { prefix = "SERVICE_GENAI", namespace = "genai", workload = module.genai_grpc[0], env = local.genai_grpc_env, policy = kubernetes_network_policy_v1.genai_grpc },
+      ] : (
+      local.narrative_engine_env["${callee.prefix}_HOST"] == one(kubernetes_manifest.service_server_certificate[callee.namespace].manifest.spec.dnsNames) &&
+      local.narrative_engine_env["${callee.prefix}_PORT"] == tostring(callee.workload.service.port) &&
+      local.narrative_engine_env["${callee.prefix}_TLS"] == "true" &&
+      contains(split(",", callee.env.SERVICE_TOKEN_CALLERS), module.narrative_engine_rest[0].service_account) &&
+      contains([for peer in one(kubernetes_network_policy_v1.narrative_engine_rest.spec).egress[0].to : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]], callee.namespace) &&
+      contains(flatten([for rule in one(callee.policy.spec).ingress : [for peer in rule.from : try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "")]]), "narrative-engine")
+    )])
+    error_message = "Narrative-engine must call JSON Keys and GenAI over TLS, by the names their certificates carry, as a caller each admits and reaches."
+  }
+
+  assert {
+    condition = (
+      length(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress) == 1 &&
+      [for peer in one(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
+      local.narrative_engine_env.SERVICE_TOKEN_CALLERS == "system:serviceaccount:narrative-engine:smoke" &&
+      one(kubernetes_manifest.service_server_certificate["narrative-engine"].manifest.spec.dnsNames) == "${module.narrative_engine_rest[0].service.name}.narrative-engine.svc"
+    )
+    error_message = "Only narrative-engine's smoke check may call its API until Studio does, over TLS."
   }
 }
 
@@ -895,7 +941,7 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.smoke)) == toset(["authentication", "genai", "json-keys"]) &&
+      toset(keys(kubernetes_job_v1.smoke)) == toset(["authentication", "genai", "json-keys", "narrative-engine"]) &&
       toset(keys(kubernetes_cron_job_v1.health)) == toset(keys(kubernetes_job_v1.smoke)) &&
       alltrue([for service, job in kubernetes_job_v1.smoke :
         job.wait_for_completion &&
@@ -923,9 +969,10 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   assert {
     condition = alltrue([for service, target in {
-      authentication = { workload = module.authentication_rest[0], env = local.authentication_env, image = "authentication/rest", policy = kubernetes_network_policy_v1.authentication_rest }
-      genai          = { workload = module.genai_grpc[0], env = local.genai_grpc_env, image = "genai/grpc", policy = kubernetes_network_policy_v1.genai_grpc }
-      json-keys      = { workload = module.json_keys_grpc[0], env = local.json_keys_env, image = "json-keys/grpc", policy = kubernetes_network_policy_v1.json_keys_grpc }
+      authentication   = { workload = module.authentication_rest[0], env = local.authentication_env, image = "authentication/rest", policy = kubernetes_network_policy_v1.authentication_rest }
+      genai            = { workload = module.genai_grpc[0], env = local.genai_grpc_env, image = "genai/grpc", policy = kubernetes_network_policy_v1.genai_grpc }
+      json-keys        = { workload = module.json_keys_grpc[0], env = local.json_keys_env, image = "json-keys/grpc", policy = kubernetes_network_policy_v1.json_keys_grpc }
+      narrative-engine = { workload = module.narrative_engine_rest[0], env = local.narrative_engine_env, image = "narrative-engine/rest", policy = kubernetes_network_policy_v1.narrative_engine_rest }
       } : alltrue([for pod in [kubernetes_job_v1.smoke[service].spec[0].template[0], kubernetes_cron_job_v1.health[service].spec[0].job_template[0].spec[0].template[0]] : (
         one(pod.spec[0].container).image == local.release_image[target.image] &&
         contains(split(",", target.env.SERVICE_TOKEN_CALLERS), "system:serviceaccount:${service}:${pod.spec[0].service_account_name}") &&

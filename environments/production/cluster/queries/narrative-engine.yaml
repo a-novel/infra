@@ -1,0 +1,26 @@
+# Narrative-engine's own numbers. CloudNativePG runs the query on the primary at every scrape, and
+# exports each column as cnpg_<query>_<column>. It reads no title, premise, owner or content.
+# narrative-engine.sql grants every column it reads.
+
+# The aggregate returns a row from an empty table, so no project reads as 0 rather than as no data.
+# A project holds its own bytes and the stored bytes of everything in it, which the service caps at
+# 16 MiB.
+projects:
+  query: |
+    SELECT
+      count(*) AS total,
+      count(*) FILTER (WHERE created_at > now() - interval '7 days') AS created_7d,
+      coalesce(max(bytes + stored_bytes), 0) AS largest_bytes
+    FROM projects
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - total:
+        usage: GAUGE
+        description: Projects.
+    - created_7d:
+        usage: GAUGE
+        description: Of those, projects created in the last 7 days.
+    - largest_bytes:
+        usage: GAUGE
+        description: Bytes the largest project stores, against its 16 MiB cap.

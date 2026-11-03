@@ -107,6 +107,17 @@ run "leaves_mail_sends_out_of_latency" {
   }
 }
 
+run "leaves_streams_and_generations_out_of_latency" {
+  command = plan
+
+  assert {
+    condition = alltrue([for span in ["GET /v1/project/stream", "GET /v1/generation/stream", "POST /v1/generation"] :
+      can(regex("^(?:${join("|", var.alerts["service-narrative-engine"].latency_ignores)})$", span))
+    ]) && !can(regex("^(?:${join("|", var.alerts["service-narrative-engine"].latency_ignores)})$", "GET /v1/generation"))
+    error_message = "Narrative-engine's streams stay open and its generation submits wait on GenAI, so its slow-requests alert must leave them out, and them alone."
+  }
+}
+
 run "links_the_journey" {
   command = plan
 
