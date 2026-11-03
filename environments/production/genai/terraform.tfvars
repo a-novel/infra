@@ -1,8 +1,8 @@
 images = {
-  database   = "ghcr.io/a-novel/service-genai/database:v0.8.4@sha256:369e9a0be29523f014eae389a2a638454af6f24b0844286795bac3969c1667e3"
-  grpc       = "ghcr.io/a-novel/service-genai/grpc:v0.8.4@sha256:4085fd429dedec498de34cbf6faf1c29b5b3e997ec20b7061097dc154ea92067"
-  migrations = "ghcr.io/a-novel/service-genai/jobs/migrations:v0.8.4@sha256:cb94f7ad48b962ebba9796763847b0faaa0f0af246824382852b0ecbd6b34716"
-  sweep      = "ghcr.io/a-novel/service-genai/sweep:v0.8.4@sha256:3d5a1a37ef9318e949f9b3bf4aeebadda8704d66eefe4e8e80437d980bda7863"
+  database   = "ghcr.io/a-novel/service-genai/database:v0.8.6@sha256:9b6505f703c8c3bd86e5ab7110ba37c7065984b0b04875894e3c51416a095263"
+  grpc       = "ghcr.io/a-novel/service-genai/grpc:v0.8.6@sha256:170b2711a5eaa6f33b1a637ca603068e22217a4ecca2d574deee51113cf19cee"
+  migrations = "ghcr.io/a-novel/service-genai/jobs/migrations:v0.8.6@sha256:bc7ae7fe3b3ac8bd70aeb2fbb4ad64fd23173468b0f46f2173451b83bfbf66d4"
+  sweep      = "ghcr.io/a-novel/service-genai/sweep:v0.8.6@sha256:8f9d2c04677d26436d0704d3603a1b269826b88a58361cc943d1b4d8f62b8d50"
 }
 
 secret_versions = {
