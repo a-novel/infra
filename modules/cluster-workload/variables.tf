@@ -38,6 +38,13 @@ variable "env" {
   description = "Plain environment variables."
   type        = map(string)
   default     = {}
+
+  # Local and test stacks turn these controls off. Production keeps every service's default: service
+  # tokens checked against the cluster's issuer, and request limits on.
+  validation {
+    condition     = length(setintersection(keys(var.env), ["SERVICE_ISSUER_OPTIONAL", "REST_RATE_LIMITS_ENABLED"])) == 0
+    error_message = "A production workload never sets SERVICE_ISSUER_OPTIONAL or REST_RATE_LIMITS_ENABLED, which only local and test stacks use to turn a control off."
+  }
 }
 
 variable "secret_env" {
@@ -47,6 +54,11 @@ variable "secret_env" {
     key    = string
   }))
   default = {}
+
+  validation {
+    condition     = length(setintersection(keys(var.secret_env), ["SERVICE_ISSUER_OPTIONAL", "REST_RATE_LIMITS_ENABLED"])) == 0
+    error_message = "A production workload never sets SERVICE_ISSUER_OPTIONAL or REST_RATE_LIMITS_ENABLED, which only local and test stacks use to turn a control off."
+  }
 }
 
 variable "service_tokens" {
