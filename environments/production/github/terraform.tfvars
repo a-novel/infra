@@ -129,7 +129,7 @@ repositories = {
   }
   "a-novel/service-profile" = {
     class        = "service"
-    description  = "The public profile of each Agora account: a username and a profile picture."
+    description  = "The public profile of Agora users."
     homepage_url = "https://a-novel.github.io/service-profile/"
     topics       = ["agora-storyverse", "go", "golang", "microservice", "postgresql", "rest-api", "user-profile"]
   }
