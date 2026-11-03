@@ -36,22 +36,53 @@ const breakingFooter = /^BREAKING[ -]CHANGE: /m;
 export const breaking = (texts) =>
   texts.some((text) => breakingSubject.test(text) || breakingFooter.test(text));
 
-// The label auto-approve-dependabot.yaml skips, and the team that then reviews the pin.
+// The label auto-approve-dependabot.yaml skips, so the pin waits for a maintainer's review.
 export const holdLabel = "breaking-release";
-const holdReviewers = ["maintainers-infra"];
 
 /**
- * The pin pull request's body, labels and requested reviewers. A breaking release's pin waits with
- * the hold label for a maintainer's review, and its body says what to check before approving.
+ * The pin pull request's body and labels, and whether it asks for a review. A breaking release's pin
+ * waits with the hold label for a maintainer, and its body says what to check before approving.
  */
 export function pinRequest(source, version, hold, serverUrl) {
   const deploys = `Deploys [${source} ${version}](${serverUrl}/${source}/releases/tag/${version}), whose release published every image pinned here.`;
-  if (!hold) return { body: deploys, labels: ["dependencies"], reviewers: [] };
+  if (!hold) return { body: deploys, labels: ["dependencies"], review: false };
   return {
     body: `${deploys}\n\nThis release breaks a contract. Approve once every service and platform that calls ${source} runs a version that handles the change.`,
     labels: ["dependencies", holdLabel],
-    reviewers: holdReviewers,
+    review: true,
   };
+}
+
+/**
+ * Asks everyone who holds Maintain or Admin on the repository to review a pull request, so GitHub
+ * notifies them. People, not a team: a team's request needs the organization's member list, which
+ * the App's token cannot read. A failure only warns, since the hold label already keeps the pin from
+ * merging alone.
+ */
+export function requestReview(repository, number, call = gh) {
+  try {
+    const reviewers = JSON.parse(
+      call(
+        "api",
+        `repos/${repository}/collaborators?permission=maintain&per_page=100`,
+        "--jq",
+        '[.[] | select(.type == "User") | .login]',
+      ),
+    );
+    if (reviewers.length === 0) throw new Error("no maintainer to ask");
+    call(
+      "api",
+      `repos/${repository}/pulls/${number}/requested_reviewers`,
+      ...reviewers.flatMap((login) => ["-f", `reviewers[]=${login}`]),
+      "--silent",
+    );
+    return reviewers;
+  } catch (error) {
+    console.log(
+      `::warning::Could not request a review of ${repository}#${number}: ${error.message}`,
+    );
+    return [];
+  }
 }
 
 /** Moves every digest-pinned reference to image in content to version and digest. */
@@ -305,15 +336,8 @@ function pin(env, source, released) {
         request.body,
         ...request.labels.flatMap((label) => ["--label", label]),
       );
-  // GitHub notifies a requested team at once, and the stuck-pull-request feed pings it later.
-  for (const team of request.reviewers)
-    gh(
-      "api",
-      `repos/${GH_REPO}/pulls/${url.split("/").pop()}/requested_reviewers`,
-      "-f",
-      `team_reviewers[]=${team}`,
-      "--silent",
-    );
+  // GitHub notifies each requested reviewer at once, and the stuck-pull-request feed pings them later.
+  if (request.review) requestReview(GH_REPO, url.split("/").pop());
   console.log(`Pinned ${source} ${version}: ${url}`);
   appendFileSync(GITHUB_STEP_SUMMARY, `Pinned ${source} ${version}: ${url}\n`);
 }
