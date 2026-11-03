@@ -139,6 +139,12 @@ run "trusts_only_reviewed_workflows" {
         "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master') || ",
         "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && ",
+        "assertion.workflow_ref.startsWith('a-novel/infra/.github/workflows/main.yaml@refs/pull/')))",
+      ]) &&
+      google_iam_workload_identity_pool_provider.github["reviewed_plan"].attribute_condition == join("", [
+        "assertion.repository_owner_id == '131281268' && assertion.repository_id == '1344262359' && (",
+        "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master') || ",
+        "(assertion.event_name == 'pull_request' && assertion.base_ref == 'master' && ",
         "assertion.workflow_ref.startsWith('a-novel/infra/.github/workflows/main.yaml@refs/pull/') && assertion.environment == 'plan'))",
       ]) &&
       google_iam_workload_identity_pool_provider.github["foundation"].attribute_condition == join("", [
@@ -164,7 +170,7 @@ run "trusts_only_reviewed_workflows" {
         "(assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'a-novel/infra/.github/workflows/drift.yaml@refs/heads/master'))",
       ])
     )
-    error_message = "Only master workflows behind their environment may write, call Authentication or read the GitHub Deploy App keys, and only same-repository pull requests admitted to the plan environment may plan."
+    error_message = "Only master workflows behind their environment may write, call Authentication or read the GitHub Deploy App keys, and only same-repository pull requests may plan, behind the plan environment for the roots that read a third party's credentials."
   }
 
   assert {
@@ -237,5 +243,17 @@ run "trusts_only_reviewed_workflows" {
   assert {
     condition     = contains(keys(google_project_iam_member.automation), "foundation:roles/storage.admin")
     error_message = "The deploy identity creates management buckets, which takes a project-level storage role."
+  }
+}
+
+run "keeps_third_party_credentials_from_unreviewed_plans" {
+  command = plan
+
+  assert {
+    condition = (
+      toset([for member in values(google_secret_manager_secret_iam_member.reviewed_plan) : member.secret_id]) == toset(["production-grafana-plan-token", "production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
+      alltrue([for member in values(google_secret_manager_secret_iam_member.reviewed_plan) : member.member == google_service_account.automation["reviewed_plan"].member])
+    )
+    error_message = "Only the reviewed plan identity reads the Grafana plan token and the Plan App keys."
   }
 }

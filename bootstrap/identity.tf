@@ -63,14 +63,15 @@ locals {
   }
 
   # A boundary that names a workflow for pull requests also trusts that workflow on this
-  # repository's pull requests into master, in the environment whose reviewers admit each run.
+  # repository's pull requests into master, in the environment whose reviewers admit each run when it
+  # names one.
   pull_request_clauses = {
-    for boundary, trust in local.trust_boundaries : boundary => trust.pull_requests == null ? [] : [join(" && ", [
+    for boundary, trust in local.trust_boundaries : boundary => trust.pull_requests == null ? [] : [join(" && ", compact([
       "assertion.event_name == 'pull_request'",
       "assertion.base_ref == 'master'",
       "assertion.workflow_ref.startsWith('${local.github.repository}/.github/workflows/${trust.pull_requests.workflow}@refs/pull/')",
-      "assertion.environment == '${trust.pull_requests.environment}'",
-    ])]
+      trust.pull_requests.environment == null ? "" : "assertion.environment == '${trust.pull_requests.environment}'",
+    ]))]
   }
 }
 
@@ -113,7 +114,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.provider_id
   display_name                       = each.value.display_name
-  description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests in ${each.value.pull_requests.environment}"}."
+  description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests${each.value.pull_requests.environment == null ? "" : " in ${each.value.pull_requests.environment}"}"}."
   disabled                           = false
   deletion_policy                    = "PREVENT"
 

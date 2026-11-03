@@ -203,13 +203,13 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-downtime
 
-  # Each root's plan is its own required check. It waits in the plan environment
-  # until a maintainer, an owner or an admin admits the run, since the plan
-  # identity reads production. GitHub issues no OIDC token to fork pull requests,
-  # so their plans fail until a maintainer pushes the branch.
+  # Each root's plan is its own required check. GitHub issues no OIDC token to
+  # fork pull requests, so their plans fail until a maintainer pushes the branch.
+  # The Grafana and GitHub roots read a third party's credentials, so their plans
+  # wait in the plan environment until a maintainer, an owner or an admin admits
+  # the run.
   plan-bootstrap:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -232,7 +232,6 @@ jobs:
 
   plan-foundation:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -255,7 +254,6 @@ jobs:
 
   plan-json-keys:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -278,7 +276,6 @@ jobs:
 
   plan-genai:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -301,7 +298,6 @@ jobs:
 
   plan-authentication:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -324,7 +320,6 @@ jobs:
 
   plan-account:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -347,7 +342,6 @@ jobs:
 
   plan-studio:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -370,7 +364,6 @@ jobs:
 
   plan-cluster:
     if: github.event_name == 'pull_request'
-    environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -390,8 +383,40 @@ jobs:
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  plan-grafana:
+  # The Grafana and GitHub plans wait for a reviewer, so they run only when the merge would apply
+  # their root: when the pull request changes what the root depends on, or, for GitHub, carries the
+  # deletion label, which makes the deploy prune. Any other pull request skips them.
+  plan-scope:
     if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      grafana: ${{ steps.scope.outputs.grafana }}
+      github: ${{ steps.scope.outputs.github }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit's first parent is the base the pull request merges into.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - id: scope
+        name: Check which reviewed roots the merge applies
+        shell: bash
+        env:
+          ALLOW_DELETION: ${{ github.event.action != 'synchronize' && contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion') }}
+        run: |
+          set -euo pipefail
+          grafana="$(.github/scripts/root-changes.sh environments/production/grafana HEAD^ HEAD)"
+          github="$(.github/scripts/root-changes.sh environments/production/github HEAD^ HEAD)"
+          echo "grafana=$([ -n "$grafana" ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+          echo "github=$([ -n "$github" ] || [ "$ALLOW_DELETION" = true ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+
+  plan-grafana:
+    needs: plan-scope
+    if: github.event_name == 'pull_request' && needs.plan-scope.outputs.grafana == 'true'
     environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -412,9 +437,12 @@ jobs:
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  # Plans repository config. Deploys and the drift check refresh it with the Deploy App.
+  # Plans repository config. Deploys and the drift check refresh it with the Deploy App. Each plan
+  # reads every repository's workflows through the Plan App, whose hourly budget all pull requests
+  # share.
   plan-github:
-    if: github.event_name == 'pull_request'
+    needs: plan-scope
+    if: github.event_name == 'pull_request' && needs.plan-scope.outputs.github == 'true'
     environment: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -427,28 +455,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The merge commit's first parent is the base the pull request merges into.
-          fetch-depth: 2
           persist-credentials: false
 
-      # Each plan reads every repository's workflows through the Plan App, whose hourly budget all
-      # pull requests share. It runs only when the merge would apply the root: when the pull request
-      # changes what the root depends on, or carries the deletion label, which makes the deploy prune.
-      - id: changes
-        name: Check whether the merge applies the root
-        shell: bash
-        run: |
-          set -euo pipefail
-          changes="$(.github/scripts/root-changes.sh environments/production/github HEAD^ HEAD)"
-          if [ -n "$changes" ] || [ "$ALLOW_DELETION" = true ]; then
-            echo "plan=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "plan=false" >>"$GITHUB_OUTPUT"
-            echo "Not planned: the pull request changes nothing the GitHub root depends on." >>"$GITHUB_STEP_SUMMARY"
-          fi
-
       - id: tofu
-        if: steps.changes.outputs.plan == 'true'
         uses: $/.github/actions/tofu
         with:
           root: environments/production/github
@@ -463,7 +472,6 @@ jobs:
       # Lists the rulesets and deployment patterns the deploy would prune. Like a deletion in the
       # plan, each needs allow-resource-deletion.
       - name: Check what prune would delete
-        if: steps.changes.outputs.plan == 'true'
         shell: bash
         env:
           PLAN: ${{ steps.tofu.outputs.plan }}
