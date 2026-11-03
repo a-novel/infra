@@ -20,6 +20,16 @@ locals {
     ADDRESS_HEADER = "X-Forwarded-For"
     XFF_DEPTH      = "2"
   }, settings) }
+  # The headers the load balancer sets on a platform's requests, over any value the browser sent. The
+  # account platform forwards the visitor's estimated place to Authentication, which records where a
+  # device logs in from under the account's consent (a-novel/.github#563).
+  # https://cloud.google.com/load-balancing/docs/https/custom-headers-global#variables
+  platform_request_headers = {
+    account = [
+      { name = "X-Client-Region", value = "{client_region}" },
+      { name = "X-Client-City", value = "{client_city}" },
+    ]
+  }
   # The port each platform serves.
   platform_port = 3000
   # The global load balancer's proxies and health checks reach the pods from these ranges.
@@ -148,12 +158,17 @@ resource "kubernetes_manifest" "platform_route" {
       hostnames  = [local.platform_edges[each.key].host]
       rules = [{
         backendRefs = [module.platform_web[each.key].service]
-        # Browsers then reach the host only over HTTPS for a year (RFC 6797). Only HTTPS answers
-        # carry the header, as its section 7.2 requires.
-        filters = [{
-          type                   = "ResponseHeaderModifier"
-          responseHeaderModifier = { set = [{ name = "Strict-Transport-Security", value = "max-age=31536000" }] }
-        }]
+        filters = concat(
+          # Browsers then reach the host only over HTTPS for a year (RFC 6797). Only HTTPS answers
+          # carry the header, as its section 7.2 requires.
+          [{
+            type                   = "ResponseHeaderModifier"
+            responseHeaderModifier = { set = [{ name = "Strict-Transport-Security", value = "max-age=31536000" }] }
+          }],
+          [for platform, headers in local.platform_request_headers :
+            { type = "RequestHeaderModifier", requestHeaderModifier = { set = headers } } if platform == each.key
+          ],
+        )
       }]
     }
   }
