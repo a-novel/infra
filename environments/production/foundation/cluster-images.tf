@@ -46,7 +46,7 @@ resource "google_artifact_registry_repository_iam_member" "cluster_upstream_node
 # database included, from its repository here, in the cluster's region, which the cluster root's
 # deploy fills. Foundation applies first, so a new repository exists for that copy.
 resource "google_artifact_registry_repository" "releases" {
-  for_each = toset(["account", "authentication", "genai", "json-keys", "narrative-engine", "studio"])
+  for_each = toset(["account", "authentication", "genai", "json-keys", "narrative-engine", "profile", "studio"])
 
   project         = google_project.workload.project_id
   location        = var.cluster_region

@@ -27,6 +27,7 @@ locals {
         "a-novel/service-genai",
         "a-novel/service-json-keys",
         "a-novel/service-narrative-engine",
+        "a-novel/service-profile",
         "a-novel/service-template",
       ]
     }
