@@ -56,6 +56,12 @@ variable "dedicated_bots" {
   default = {}
 }
 
+variable "faro_app_ids" {
+  description = "By repository name, the Faro app each platform's release build sends its source maps to."
+  type        = map(number)
+  default     = {}
+}
+
 variable "scoped_secrets" {
   description = "Organization secrets with selected-repository visibility, each granted to the repositories whose workflows name it. An admin switches a secret to selected visibility by hand before listing it."
   type        = set(string)

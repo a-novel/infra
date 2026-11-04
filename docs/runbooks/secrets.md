@@ -184,6 +184,26 @@ the Grafana root's `token_versions`. Pull requests and the drift check read the 
 `infra-reviewed-plan`, and deploys the deploy token as `infra-grafana`. For a leak, delete the token
 on the same Access Policies page as well as disabling its version.
 
+## Source-map upload keys
+
+A platform's release build sends its browser source maps to its Faro app with a Grafana Cloud
+access policy token, which the platform's `sourcemaps` environment holds as
+`FARO_SOURCEMAP_API_KEY`. Create the access policy once in the Cloud Portal, under **Security →
+Access policies**: name it `faro-sourcemaps`, give it the production stack as its realm, and the
+`sourcemaps:read`, `sourcemaps:write` and `sourcemaps:delete` scopes. Then create one token per
+platform, named after it, without an expiry.
+
+Set a platform's token only once the GitHub root has applied its `sourcemaps` environment, which
+the platform's `release.yaml` names: the environment then admits only `master`, `release/v*`
+branches and `v*` tags. `gh` prompts for the value:
+
+```bash
+gh secret set FARO_SOURCEMAP_API_KEY --env sourcemaps --repo a-novel/platform-studio
+```
+
+platform-template keeps no key, so its builds send nothing. For a leak, delete the token in the
+Cloud Portal, then set a new one.
+
 ## GitHub root keys
 
 The GitHub root reads one GitHub App key per organization and CI identity. Core creates each

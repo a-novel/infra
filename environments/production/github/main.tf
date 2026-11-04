@@ -55,6 +55,16 @@ locals {
   owned = { for owner in keys(var.apps) : owner => { for repository in values(local.repositories) : repository.name => repository if repository.owner == owner } }
 }
 
+# The Grafana root holds each platform's Faro app, which the platform's release build sends its
+# source maps to.
+data "terraform_remote_state" "grafana" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "grafana"
+  }
+}
+
 # One call per organization, each with its own App's provider. To drop an organization, remove its
 # call first and its provider one apply later: a provider must outlive its resources by one apply.
 module "a_novel" {
@@ -73,6 +83,7 @@ module "a_novel" {
   dedicated_bots     = { for key, apps in var.dedicated_apps : split("/", key)[1] => apps if split("/", key)[0] == "a-novel" }
   scoped_secrets     = var.organizations["a-novel"].scoped_secrets
   governance_secrets = toset(keys(var.organizations["a-novel"].governance_secrets))
+  faro_app_ids       = data.terraform_remote_state.grafana.outputs.faro_app_ids
 }
 
 module "a_novel_kit" {
