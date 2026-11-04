@@ -33,8 +33,7 @@ cluster = {
   min_nodes    = 3
   max_nodes    = 4
 }
-# Apart from agora-production's ranges, which the import peering joins. The pods' /20 holds 16 nodes
-# at 110 pods each.
+# The pods' /20 holds 16 nodes at 110 pods each.
 cluster_ranges = {
   nodes    = "10.30.0.0/24"
   services = "10.30.4.0/22"
