@@ -39,7 +39,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | Outcome     | Means                               | Codes                                                                                                                                                              |
 | ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `fault`     | our own failure: fix it             | any other failure: HTTP 5xx, gRPC `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `UNIMPLEMENTED`, a panic, a failed job or email send                                         |
-| `transient` | a dependency or timeout: watch it   | HTTP 429, 502, 503, 504; gRPC `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`                                                                  |
+| `transient` | a dependency or timeout: watch it   | HTTP 429, 502, 503, 504; gRPC `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`; PostgreSQL `57P01`, `57P02`, `57P03` (a database handover)      |
 | `expected`  | the caller's own mistake: no action | other HTTP 4xx; gRPC `CANCELLED`, `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` |
 | `ok`        | success                             |                                                                                                                                                                    |
 
@@ -48,7 +48,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `<service>: failing share`           | more than its `failure_rate` of its calls were faults or transient over 10 minutes, for 5 minutes |
 | `<service>: slow requests`           | its requests' 95th percentile took longer than `p95_seconds` over 10 minutes, for 5 minutes       |
 | `<service>: faults`                  | a fault in the last 10 minutes: one alert per span and error type                                 |
-| `<service>: new fault`               | the service raised an error type it had not raised in the week before                             |
+| `<service>: new fault`               | a fault of an error type the service had not faulted with in the week before                      |
 | `Scheduled job failing`              | a CronJob's latest scheduled run has not succeeded for 15 minutes; a later success resolves it    |
 | `Scheduled job missed`               | a CronJob is more than 10 minutes late for a run it never started                                 |
 | `Volume above 70%`, `85%`            | a database volume stays that full for 10 and 5 minutes                                            |
