@@ -352,6 +352,8 @@ archives it.
   each, from the Plan App's hourly budget that all pull requests share.
 - **Team access is authoritative; labels are not.** A team or person granted by hand loses access at
   the next apply. Only the managed labels are enforced: the Epic, gate and Dependabot labels stay.
+  Both organizations keep no default repository labels: GitHub copies them into each new
+  repository, where the root's labels of the same names fail to create with `already_exists`.
 - **It applies from its own environment and identity,** `github` and `infra-github`, apart from
   Google Cloud's production: in `deploy.yaml`'s own `github` job when it changes, which no release
   waits on, and from `sweep.yaml`.
