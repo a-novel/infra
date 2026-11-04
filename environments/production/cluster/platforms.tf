@@ -1,8 +1,19 @@
 # The platforms on the cluster. Visitors reach each on its own host through its own Gateway on
 # Google's global load balancer (a-novel/infra#1201), at the address, certificate and TLS policy
 # foundation holds. Each runs one web workload in the namespace named after it.
+
+# The Grafana root holds each platform's Faro app, whose collector the platform's browser reports to.
+data "terraform_remote_state" "grafana" {
+  backend = "gcs"
+  config = {
+    bucket = "a-novel-management-prod-232403541574-tofu-state"
+    prefix = "grafana"
+  }
+}
+
 locals {
-  platform_edges = data.terraform_remote_state.foundation.outputs.platform_edges
+  platform_edges  = data.terraform_remote_state.foundation.outputs.platform_edges
+  faro_collectors = data.terraform_remote_state.grafana.outputs.faro_collectors
   # Each platform's own settings, on top of those every platform takes.
   platforms = {
     # The app list opens Studio.
@@ -24,6 +35,8 @@ locals {
     # platform forwards.
     ADDRESS_HEADER = "X-Forwarded-For"
     XFF_DEPTH      = "2"
+    # The browser reports to the platform's Faro app once the visitor consents.
+    PUBLIC_FARO_URL = local.faro_collectors["platform-${platform}"]
   }, settings) }
   # The headers the load balancer sets on a platform's requests, over any value the browser sent. The
   # account platform forwards the visitor's estimated place to Authentication, which records where a
