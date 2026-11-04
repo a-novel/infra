@@ -62,6 +62,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `Cluster above its baseline`         | the cluster has run more nodes than foundation's `cluster.min_nodes` for 2 hours                  |
 | `Autoscaler at its maximum`          | the cluster has run as many nodes as foundation's `cluster.max_nodes` for 30 minutes              |
 | `Collector silent`                   | no scrape reached Grafana for 10 minutes                                                          |
+| `Gateway refused`                    | GKE warned about a platform's Gateway, route or policy in the last 15 minutes                     |
 | `Container CPU above 80% …`          | a container uses more than `container_cpu` of the CPU it requests for 15 minutes                  |
 | `Container memory above 85% …`       | a container uses more than `container_memory` of its memory limit for 10 minutes                  |
 | `Container killed for memory`        | a container restarted after running out of memory                                                 |
@@ -209,6 +210,22 @@ kubectl --namespace=genai logs "job/$JOB"
 - **The purge runs and the backlog still grows:** settled content arrives faster than the purge
   deletes it. The volume alerts give the time left. Raising the purge's batch is a service-genai
   change.
+
+## Gateway refused
+
+`Gateway refused` fires while GKE's Gateway controller refuses a platform's Gateway, or one of its
+routes or policies, and retries every few minutes. Until it accepts them all, the platform's load
+balancer keeps its last good config: the deploy succeeded, but nothing it changed on the Gateway,
+its routes or its policies is live. The warning names the resource and the reason:
+
+```bash
+NAMESPACE="<the alert's k8s_namespace_name>"
+kubectl --namespace="$NAMESPACE" get events --field-selector=type=Warning
+```
+
+Fix that resource in the cluster root, in a pull request. The Gateway API accepts values GKE's
+controller refuses, as the redirect's 308 showed (a-novel/infra#1537), so a valid manifest and a
+green apply prove nothing until this alert resolves.
 
 ## Budget
 

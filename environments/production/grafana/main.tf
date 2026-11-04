@@ -21,9 +21,10 @@ locals {
     version = var.token_versions.cloud_plan
   }
 
-  # The stack's own data sources: Mimir, which holds every metric Alloy sends, and Grafana Cloud's
-  # usage metrics.
+  # The stack's own data sources: Mimir, which holds every metric Alloy sends, Loki, which holds the
+  # cluster's events, and Grafana Cloud's usage metrics.
   metrics = "grafanacloud-prom"
+  logs    = "grafanacloud-logs"
   usage   = "grafanacloud-usage"
 }
 
