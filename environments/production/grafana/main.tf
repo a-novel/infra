@@ -12,6 +12,14 @@ locals {
     secret  = "production-grafana-plan-token"
     version = var.token_versions.plan
   }
+  # Frontend Observability's API takes a Grafana Cloud access policy token instead, chosen the same way.
+  cloud_token = var.writer ? {
+    secret  = "production-grafana-cloud-deploy-token"
+    version = var.token_versions.cloud_deploy
+    } : {
+    secret  = "production-grafana-cloud-plan-token"
+    version = var.token_versions.cloud_plan
+  }
 
   # The stack's own data sources: Mimir, which holds every metric Alloy sends, and Grafana Cloud's
   # usage metrics.
@@ -26,10 +34,18 @@ ephemeral "google_secret_manager_secret_version" "grafana_token" {
   version = local.token.version
 }
 
+ephemeral "google_secret_manager_secret_version" "grafana_cloud_token" {
+  project = var.management_project_id
+  secret  = local.cloud_token.secret
+  version = local.cloud_token.version
+}
+
 provider "grafana" {
   url      = var.url
   stack_id = var.stack_id
   auth     = ephemeral.google_secret_manager_secret_version.grafana_token.secret_data
+
+  frontend_o11y_api_access_token = ephemeral.google_secret_manager_secret_version.grafana_cloud_token.secret_data
 
   # Grafana Cloud sometimes answers 503 for longer than the three default retries wait (14 seconds).
   # Six retries wait up to two minutes, the window the plan gives Google's transient errors.

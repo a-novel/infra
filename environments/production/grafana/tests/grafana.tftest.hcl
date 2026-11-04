@@ -7,8 +7,8 @@ run "plans_with_the_read_only_token" {
   command = plan
 
   assert {
-    condition     = local.token.secret == "production-grafana-plan-token"
-    error_message = "Pull requests and the drift check run pull-request code, so they must read only the read-only token."
+    condition     = local.token.secret == "production-grafana-plan-token" && local.cloud_token.secret == "production-grafana-cloud-plan-token"
+    error_message = "Pull requests and the drift check run pull-request code, so they must read only the read-only tokens."
   }
 }
 
@@ -20,8 +20,8 @@ run "deploys_with_the_write_token" {
   }
 
   assert {
-    condition     = local.token.secret == "production-grafana-deploy-token"
-    error_message = "Only a deploy may read the token that writes."
+    condition     = local.token.secret == "production-grafana-deploy-token" && local.cloud_token.secret == "production-grafana-cloud-deploy-token"
+    error_message = "Only a deploy may read the tokens that write."
   }
 }
 
@@ -234,4 +234,25 @@ run "pins_the_cloudnative_pg_dashboard" {
     ])
     error_message = "The CloudNativePG dashboard must read the stack's metrics."
   }
+}
+
+run "keeps_each_faro_app_to_its_platform" {
+  command = plan
+
+  assert {
+    condition = alltrue([for platform, app in grafana_frontend_o11y_app.platform :
+      jsonencode(app.allowed_origins) == jsonencode([var.faro_apps[platform]]) && jsonencode(app.settings) == jsonencode({ "geolocation.enabled" = "0" })
+    ]) && length(grafana_frontend_o11y_app.platform) == length(var.faro_apps)
+    error_message = "Each platform's Faro app must take signals from its own origin alone and derive no place from a visitor's address."
+  }
+}
+
+run "refuses_a_faro_origin_with_a_path" {
+  command = plan
+
+  variables {
+    faro_apps = { "platform-account" = "https://account.storyverse.fr/" }
+  }
+
+  expect_failures = [var.faro_apps]
 }
