@@ -207,6 +207,15 @@ locals {
       summary = "Grafana received no scrape from Alloy for 10 minutes."
       expr    = "absent_over_time(up[10m])"
     },
+    # GKE's Gateway controller warns every few minutes while it refuses a platform's Gateway, route or
+    # policy. Until then the load balancer keeps its last good config, though the apply succeeded.
+    {
+      title      = "Gateway refused"
+      datasource = local.logs
+      for        = "0s"
+      summary    = "GKE refuses the {{ $labels.k8s_namespace_name }} Gateway or one of its routes or policies, so its load balancer keeps its last good config."
+      expr       = "sum by (k8s_namespace_name) (count_over_time({service_name=\"integrations/kubernetes/eventhandler\"} | level=\"Warning\" |= \"sourcecomponent=sc-gateway-controller\" [15m]))"
+    },
   ]
 
   request_rules = [for resource, sum in local.requests : {
@@ -412,7 +421,11 @@ resource "grafana_rule_group" "alerts" {
       data {
         ref_id         = "query"
         datasource_uid = lookup(rule.value, "datasource", local.metrics)
-        model          = jsonencode({ refId = "query", expr = rule.value.expr, instant = true })
+        # Loki answers a range unless queryType says instant, and a rule cannot fire on a range.
+        model = jsonencode(merge(
+          { refId = "query", expr = rule.value.expr, instant = true },
+          lookup(rule.value, "datasource", local.metrics) == local.logs ? { queryType = "instant" } : {},
+        ))
 
         relative_time_range {
           from = 600

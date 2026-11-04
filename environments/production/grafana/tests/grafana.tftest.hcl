@@ -215,8 +215,15 @@ run "alerts_before_grafana_bills_overage" {
   }
 
   assert {
-    condition     = alltrue(flatten([for name, group in grafana_rule_group.alerts : [for rule in group.rule : rule.data[0].datasource_uid == "grafanacloud-prom"] if name != "usage"]))
-    error_message = "Every other alert reads the metrics Alloy sends."
+    condition = alltrue(flatten([for name, group in grafana_rule_group.alerts : [
+      for rule in group.rule : rule.data[0].datasource_uid == (rule.name == "Gateway refused" ? "grafanacloud-logs" : "grafanacloud-prom")
+    ] if name != "usage"]))
+    error_message = "Every other alert reads the metrics Alloy sends, except the Gateway alert, which reads the cluster's events."
+  }
+
+  assert {
+    condition     = jsondecode(one([for rule in grafana_rule_group.alerts["platform"].rule : rule if rule.name == "Gateway refused"]).data[0].model).queryType == "instant"
+    error_message = "The Gateway alert must ask Loki for an instant value: a rule cannot fire on the range Loki answers otherwise."
   }
 }
 
