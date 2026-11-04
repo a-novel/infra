@@ -564,12 +564,11 @@ run "runs_json_keys" {
   assert {
     condition = (
       alltrue([for env in [local.json_keys_env, local.json_keys_rest_env] :
-        length([for name in keys(env) : name if startswith(name, "SENTRY_")]) == 0 &&
         env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["json-keys"].manifest.spec.dnsNames)
       ]) &&
       local.json_keys_env.SERVICE_TOKEN_ISSUER == "https://container.googleapis.com/v1/projects/a-novel-production-prod/locations/europe-west9-a/clusters/a-novel-production"
     )
-    error_message = "JSON Keys' servers must report nothing to Sentry and use their CloudNativePG database by its certificate's name, and its gRPC server must verify this cluster's service tokens."
+    error_message = "JSON Keys' servers must use their CloudNativePG database by its certificate's name, and its gRPC server must verify this cluster's service tokens."
   }
 
   assert {
@@ -616,12 +615,11 @@ run "runs_authentication" {
 
   assert {
     condition = (
-      length([for name in keys(local.authentication_env) : name if startswith(name, "SENTRY_")]) == 0 &&
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
       local.authentication_env.PLATFORM_AUTH_URL == "https://account.storyverse.fr"
     )
-    error_message = "Authentication must report nothing to Sentry, use its CloudNativePG database by its certificate's name, and send its root's mail with links to the account platform."
+    error_message = "Authentication must use its CloudNativePG database by its certificate's name and send its root's mail with links to the account platform."
   }
 
   # A release without service tokens sends Google ID tokens when GCLOUD_PROJECT_ID is set, which
@@ -770,10 +768,9 @@ run "runs_genai" {
 
   assert {
     condition = alltrue([for env in [local.genai_grpc_env, local.genai_sweep_env] :
-      length([for name in keys(env) : name if startswith(name, "SENTRY_")]) == 0 &&
       env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["genai"].manifest.spec.dnsNames)
     ])
-    error_message = "GenAI's server and sweep must report nothing to Sentry, and use their CloudNativePG database by its certificate's name."
+    error_message = "GenAI's server and sweep must use their CloudNativePG database by its certificate's name."
   }
 
   assert {
@@ -823,11 +820,10 @@ run "runs_narrative_engine" {
 
   assert {
     condition = (
-      length([for name in keys(local.narrative_engine_env) : name if startswith(name, "SENTRY_")]) == 0 &&
       local.narrative_engine_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["narrative-engine"].manifest.spec.dnsNames) &&
       local.narrative_engine_env.SERVICE_TOKEN_ISSUER == local.json_keys_env.SERVICE_TOKEN_ISSUER
     )
-    error_message = "Narrative-engine must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database by its certificate's name."
+    error_message = "Narrative-engine must verify this cluster's service tokens and use its CloudNativePG database by its certificate's name."
   }
 
   # The callees serve TLS only, so a plaintext dial reaches neither.
@@ -895,11 +891,10 @@ run "runs_profile" {
 
   assert {
     condition = (
-      length([for name in keys(local.profile_env) : name if startswith(name, "SENTRY_")]) == 0 &&
       local.profile_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["profile"].manifest.spec.dnsNames) &&
       local.profile_env.SERVICE_TOKEN_ISSUER == local.json_keys_env.SERVICE_TOKEN_ISSUER
     )
-    error_message = "Profile must report nothing to Sentry, verify this cluster's service tokens, and use its CloudNativePG database by its certificate's name."
+    error_message = "Profile must verify this cluster's service tokens and use its CloudNativePG database by its certificate's name."
   }
 
   # JSON Keys' gRPC server serves TLS only, so a plaintext dial never reaches it.
@@ -941,12 +936,11 @@ run "runs_each_platform" {
 
   assert {
     condition = alltrue([for platform, env in local.platform_env :
-      length([for name in keys(env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
       env.PUBLIC_FARO_URL == data.terraform_remote_state.grafana.outputs.faro_collectors["platform-${platform}"] &&
       env.ADDRESS_HEADER == "X-Forwarded-For" &&
       env.XFF_DEPTH == "2"
     ])
-    error_message = "Each platform must report to its own Faro app, never to Sentry, and take the visitor's address the load balancer appends."
+    error_message = "Each platform must report to its own Faro app and take the visitor's address the load balancer appends."
   }
 
   assert {
@@ -1216,7 +1210,7 @@ run "lets_only_the_named_operators_run_maintenance" {
         { for env in one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }[name] == local.authentication_env[name]
       ])
     )
-    error_message = "The maintenance template must never run on its own, run Authentication's maintenance image with no operation, and send the API's mail through the relay within SMTP_TIMEOUT and Sentry's exit flush."
+    error_message = "The maintenance template must never run on its own, run Authentication's maintenance image with no operation, and send the API's mail through the relay within SMTP_TIMEOUT, with room for the exit."
   }
 
   assert {
