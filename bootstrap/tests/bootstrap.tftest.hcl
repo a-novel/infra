@@ -106,6 +106,14 @@ run "protects_state_and_backups" {
     condition     = endswith(google_storage_bucket_iam_member.github_state.condition[0].expression, "/objects/github/\")")
     error_message = "The GitHub root's deploys may write their own state alone."
   }
+
+  assert {
+    condition = (
+      google_storage_bucket_iam_member.github_reads_grafana_state.role == "roles/storage.objectViewer" &&
+      endswith(google_storage_bucket_iam_member.github_reads_grafana_state.condition[0].expression, "/objects/grafana/\")")
+    )
+    error_message = "The GitHub root's deploys may read the Grafana root's state, and never write it."
+  }
 }
 
 run "isolates_each_database_backup" {

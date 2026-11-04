@@ -86,6 +86,19 @@ resource "google_storage_bucket_iam_member" "github_state" {
   }
 }
 
+# The GitHub root's deploys read the Grafana root's state, which holds each platform's Faro app ID,
+# without changing it.
+resource "google_storage_bucket_iam_member" "github_reads_grafana_state" {
+  bucket = google_storage_bucket.state.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.automation["github"].member
+
+  condition {
+    title      = "grafana-root-state-read"
+    expression = "resource.type == \"storage.googleapis.com/Bucket\" || resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.state.name}/objects/grafana/\")"
+  }
+}
+
 # State holds no secret values, so the drift identity reads it as the plan identity does, without
 # creating .tflock objects.
 resource "google_storage_bucket_iam_member" "drift_state" {
