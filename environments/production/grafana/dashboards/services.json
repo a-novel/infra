@@ -4149,6 +4149,418 @@
           }
         }
       }
+    },
+    "profile-profiles": {
+      "kind": "Panel",
+      "spec": {
+        "id": 47,
+        "title": "Profiles",
+        "description": "Every profile the service stores, those with a username and those with a picture, and the profiles created in the last 7 days. A picture weighs about 40 KB in the database: when pictures climb fast, check the profile database's volume on Health.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "profiles",
+                      "expr": "max(cnpg_profiles_total)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "with a username",
+                      "expr": "max(cnpg_profiles_with_username)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "with a picture",
+                      "expr": "max(cnpg_profiles_with_picture)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "D",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "instant": true,
+                      "legendFormat": "created, 7 days",
+                      "expr": "max(cnpg_profiles_created_7d)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "stat",
+          "version": "",
+          "spec": {
+            "options": {
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value_and_name",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ]
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                },
+                "decimals": 0
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "profile-writes": {
+      "kind": "Panel",
+      "spec": {
+        "id": 48,
+        "title": "Writes",
+        "description": "Each hour's username and picture writes, by route. Only the account page writes profiles, so a burst with no matching visitors on the account tab means a client repeats its writes.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-profile\" && kind = server && (name = \"PUT /v1/profile\" || name = \"PUT /v1/profile/picture\" || name = \"DELETE /v1/profile/picture\") } | count_over_time() by (name)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "profile-refusals": {
+      "kind": "Panel",
+      "spec": {
+        "id": 49,
+        "title": "Refusals",
+        "description": "Each hour's refused writes: pictures by the rule they broke (format, ratio or dimensions), bodies over the 256 KiB cap, and 400 answers to a username update, which a refused username or a malformed body causes. The account page checks the same rules before it sends, so worry when refusals climb: a client skips the checks, or its rules and the service's differ.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-profile\" && name = \"core.decodePicture\" && status = error } | count_over_time() by (span.error.type)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "B",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-profile\" && kind = server && span.http.response.status_code = 413 } | count_over_time() by (span.http.response.status_code)"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "C",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-profile\" && kind = server && name = \"PUT /v1/profile\" && span.http.response.status_code = 400 } | count_over_time() by (name)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\"?(format|ratio|dimensions)\"?$",
+                    "renamePattern": "picture $1"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\"?413\"?$",
+                    "renamePattern": "body over 256 KiB"
+                  }
+                }
+              },
+              {
+                "kind": "Transformation",
+                "group": "renameByRegex",
+                "spec": {
+                  "options": {
+                    "regex": "^\"?PUT /v1/profile\"?$",
+                    "renamePattern": "username"
+                  }
+                }
+              }
+            ],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
+    "profile-reads": {
+      "kind": "Panel",
+      "spec": {
+        "id": 50,
+        "title": "Reads",
+        "description": "Each hour's profile and picture reads, by route. Browsers keep each picture version for a year, so picture reads follow new pictures and new visitors: a climb without either means browsers stopped caching them.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "tempo",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-traces"
+                    },
+                    "spec": {
+                      "queryType": "traceql",
+                      "metricsQueryType": "range",
+                      "step": "1h",
+                      "query": "{ resource.service.name = \"service-profile\" && kind = server && (name = \"GET /v1/profile\" || name = \"GET /v1/profile/self\" || name = \"GET /v1/profile/picture\") } | count_over_time() by (name)"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {
+              "timeFrom": "24h"
+            }
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
     }
   },
   "layout": {
@@ -4636,6 +5048,58 @@
                       "element": {
                         "kind": "ElementReference",
                         "name": "narrative-engine-refusals"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "TabsLayoutTab",
+          "spec": {
+            "title": "Profile",
+            "layout": {
+              "kind": "AutoGridLayout",
+              "spec": {
+                "maxColumnCount": 3,
+                "columnWidthMode": "standard",
+                "rowHeightMode": "standard",
+                "items": [
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "profile-profiles"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "profile-writes"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "profile-refusals"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "profile-reads"
                       }
                     }
                   }
