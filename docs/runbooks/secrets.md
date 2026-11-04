@@ -207,7 +207,27 @@ Cloud Portal, then set a new one.
 ## GitHub root keys
 
 The GitHub root reads one GitHub App key per organization and CI identity. Core creates each
-organization's Plan App and Deploy App by hand, with the permissions a-novel/.github#535 lists.
+organization's Plan App and Deploy App by hand, private to the organization and installed on all its
+repositories, with these permissions. Neither holds Workflows, so neither can change a workflow file:
+
+| Permission                 | Plan App | Deploy App | Used for                                                                                                                                                          |
+| -------------------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository: Administration | Read     | Write      | Settings, rulesets, collaborators and team grants, vulnerability alerts, workflow token permissions, the assert steps, environments and their deployment patterns |
+| Repository: Actions        | Read     | Read       | Reading environments and deployment patterns                                                                                                                      |
+| Repository: Contents       | Read     | Write      | Discovery, and creating a repository from a template. GitHub returns a repository's merge settings only to an App with Contents write                             |
+| Repository: Environments   | Read     | Write      | Environment secret names, then secret sync                                                                                                                        |
+| Repository: Issues         | Read     | Write      | Labels                                                                                                                                                            |
+| Repository: Metadata       | Read     | Read       | Repositories, rulesets, collaborators                                                                                                                             |
+| Repository: Pages          | Read     | Write      | Pages                                                                                                                                                             |
+| Repository: Variables      | Read     | Write      | Repository variables: a dedicated bot's client ID, and each platform's `FARO_SOURCEMAP_APP_ID`                                                                    |
+| Organization: Members      | Read     | Write      | Tier and area teams                                                                                                                                               |
+| Organization: Secrets      | Read     | Write      | Scoped org secret access                                                                                                                                          |
+
+The Deploy App also needs the organization's repository creation permission, which GitHub lists
+beside Administration, and reads Code Quality's setup, which needs Administration write, for the
+drift check. A permission added later takes effect only once each organization approves it, on its
+settings' **GitHub Apps** page, where the installation shows the request.
+
 Generate a private key under the App's **Private keys** settings, add the downloaded file as a
 version of its secret, then delete the file:
 
