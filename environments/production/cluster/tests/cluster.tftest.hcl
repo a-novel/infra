@@ -54,6 +54,18 @@ override_data {
 }
 
 override_data {
+  target = data.terraform_remote_state.grafana
+  values = {
+    outputs = {
+      faro_collectors = {
+        platform-account = "https://faro-collector-prod-eu-west-2.grafana.net/collect/account"
+        platform-studio  = "https://faro-collector-prod-eu-west-2.grafana.net/collect/studio"
+      }
+    }
+  }
+}
+
+override_data {
   target = data.terraform_remote_state.bootstrap
   values = {
     outputs = {
@@ -881,10 +893,11 @@ run "runs_each_platform" {
   assert {
     condition = alltrue([for platform, env in local.platform_env :
       length([for name in keys(env) : name if startswith(name, "SENTRY_") || startswith(name, "PUBLIC_SENTRY_")]) == 0 &&
+      env.PUBLIC_FARO_URL == data.terraform_remote_state.grafana.outputs.faro_collectors["platform-${platform}"] &&
       env.ADDRESS_HEADER == "X-Forwarded-For" &&
       env.XFF_DEPTH == "2"
     ])
-    error_message = "Each platform must report nothing to Sentry and take the visitor's address the load balancer appends."
+    error_message = "Each platform must report to its own Faro app, never to Sentry, and take the visitor's address the load balancer appends."
   }
 
   assert {
