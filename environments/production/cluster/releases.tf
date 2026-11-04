@@ -6,7 +6,7 @@ locals {
     account          = ["web"]
     authentication   = ["database", "maintenance", "migrations", "rest"]
     genai            = ["database", "grpc", "migrations", "sweep"]
-    json-keys        = ["database", "grpc", "migrations", "rotatekeys"]
+    json-keys        = ["database", "grpc", "migrations", "rest", "rotatekeys"]
     narrative-engine = ["database", "migrations", "rest"]
     studio           = ["web"]
   }

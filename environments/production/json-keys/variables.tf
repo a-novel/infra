@@ -5,10 +5,10 @@ variable "images" {
   type        = map(string)
 
   validation {
-    condition = toset(keys(var.images)) == toset(["database", "grpc", "migrations", "rotatekeys"]) && alltrue([
+    condition = toset(keys(var.images)) == toset(["database", "grpc", "migrations", "rest", "rotatekeys"]) && alltrue([
       for ref in values(var.images) : can(regex("^ghcr\\.io/a-novel/service-json-keys/[^:@]+:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}$", ref))
     ])
-    error_message = "Pin the database, grpc, migrations and rotatekeys images by release tag and digest."
+    error_message = "Pin the database, grpc, migrations, rest and rotatekeys images by release tag and digest."
   }
 }
 

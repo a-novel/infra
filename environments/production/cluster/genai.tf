@@ -40,7 +40,7 @@ module "genai_grpc" {
   namespace       = kubernetes_namespace_v1.service["genai"].metadata[0].name
   image           = local.release_image["genai/grpc"]
   port            = local.service_port
-  tls             = { secret = kubernetes_manifest.service_server_certificate["genai"].manifest.spec.secretName }
+  tls             = { secret = kubernetes_manifest.service_server_certificate["genai/grpc"].manifest.spec.secretName }
   env             = local.genai_grpc_env
   secret_env      = local.genai_secret_env
   ca_secret       = kubernetes_manifest.database_server_certificate["genai"].manifest.spec.secretName

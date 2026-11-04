@@ -29,7 +29,7 @@ module "narrative_engine_rest" {
   namespace        = kubernetes_namespace_v1.service["narrative-engine"].metadata[0].name
   image            = local.release_image["narrative-engine/rest"]
   port             = local.service_port
-  tls              = { secret = kubernetes_manifest.service_server_certificate["narrative-engine"].manifest.spec.secretName }
+  tls              = { secret = kubernetes_manifest.service_server_certificate["narrative-engine/rest"].manifest.spec.secretName }
   service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
   http_health_path = "/v1/ping"
   env              = local.narrative_engine_env

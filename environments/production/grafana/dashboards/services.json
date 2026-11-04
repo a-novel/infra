@@ -152,7 +152,7 @@
       "spec": {
         "id": 35,
         "title": "Account changes",
-        "description": "Each hour's forms outside the sign-in dialog, by form and status. The account page changes a password or an email and signs out; the email links create an invited account, confirm an email or reset a password. 200 and 303 completed the step. 400 refused an invalid form, 403 a wrong current password. A link also answers 303 once it has expired, and 503 when the visitor hit the rate limit: Refusals from Authentication tells them apart. Worry at any other 5xx.",
+        "description": "Each hour's forms outside the sign-in dialog, by form and status. The account page changes a password or an email and signs out; the email links create an invited account, confirm an email or reset a password. 200 and 303 completed the step. 400 refused an invalid form, 403 a wrong current password. A link also answers 303 once it has expired, and 503 when the visitor hit the rate limit: Refusals from the services tells them apart. Worry at any other 5xx.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -304,8 +304,8 @@
       "kind": "Panel",
       "spec": {
         "id": 37,
-        "title": "Calls to Authentication: p95",
-        "description": "How long the platform's server waits on each Authentication endpoint, at the 95th percentile. Every page a visitor with a session opens waits on GET /v2/session, so worry when it climbs.",
+        "title": "Calls to the services: p95",
+        "description": "How long the platform's server waits on each endpoint of Authentication and JSON Keys, at the 95th percentile. Every page a visitor with a session opens waits on GET /v2/session, so worry when it climbs.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -327,7 +327,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address = \"rest.authentication.svc\" } | quantile_over_time(duration, .95) by (span.http.request.method, span.url.path)"
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys)[.]svc\" } | quantile_over_time(duration, .95) by (span.http.request.method, span.url.path)"
                     }
                   }
                 }
@@ -379,8 +379,8 @@
       "kind": "Panel",
       "spec": {
         "id": 38,
-        "title": "Refusals from Authentication",
-        "description": "Each hour's calls Authentication answered with an error status, by endpoint and status: where a visitor's request met a limit, an expired link or a fault. Worry at any 5xx.",
+        "title": "Refusals from the services",
+        "description": "Each hour's calls Authentication or JSON Keys answered with an error status, by endpoint and status: where a visitor's request met a limit, an expired link or a fault. Worry at any 5xx.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -402,7 +402,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address = \"rest.authentication.svc\" && span.http.response.status_code >= 400 } | count_over_time() by (span.http.request.method, span.url.path, span.http.response.status_code)"
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys)[.]svc\" && span.http.response.status_code >= 400 } | count_over_time() by (span.http.request.method, span.url.path, span.http.response.status_code)"
                     }
                   }
                 }
@@ -3174,6 +3174,74 @@
         }
       }
     },
+    "json-keys-public-reads": {
+      "kind": "Panel",
+      "spec": {
+        "id": 46,
+        "title": "Public key reads",
+        "description": "Each hour's requests to the public REST API, by route and status: each platform pod reads the keys when its 30-minute cache expires, and the health check every 5 minutes. Worry at any 5xx, which keeps a platform from refreshing its keys.",
+        "links": [],
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "refId": "A",
+                  "hidden": false,
+                  "query": {
+                    "kind": "DataQuery",
+                    "group": "prometheus",
+                    "version": "v0",
+                    "datasource": {
+                      "name": "grafanacloud-prom"
+                    },
+                    "spec": {
+                      "legendFormat": "{{span_name}} · {{http_response_status_code}}",
+                      "interval": "1h",
+                      "expr": "sum by (span_name, http_response_status_code) (increase(traces_span_metrics_calls_total{service_name=\"service-json-keys\", http_response_status_code!=\"\"}[$__interval]))"
+                    }
+                  }
+                }
+              }
+            ],
+            "transformations": [],
+            "queryOptions": {}
+          }
+        },
+        "vizConfig": {
+          "kind": "VizConfig",
+          "group": "timeseries",
+          "version": "",
+          "spec": {
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom"
+              },
+              "tooltip": {
+                "mode": "multi"
+              }
+            },
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "stacking": {
+                    "mode": "normal"
+                  }
+                }
+              },
+              "overrides": []
+            }
+          }
+        }
+      }
+    },
     "studio-sign-ins": {
       "kind": "Panel",
       "spec": {
@@ -4480,6 +4548,15 @@
                       "element": {
                         "kind": "ElementReference",
                         "name": "json-keys-verify-failures"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "json-keys-public-reads"
                       }
                     }
                   }

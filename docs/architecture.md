@@ -156,10 +156,11 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   [setup runbook](runbooks/setup.md) runs.
 - **Health checks:** the shared health check, `modules/smoke-check/smoke.sh`, calls JSON Keys' and
   GenAI's `Status` RPC, Authentication's `/v2/healthcheck` and narrative-engine's `/v1/healthcheck`,
-  as the namespace's `smoke` identity with a service token for the service's audience. A
-  `smoke-<hash>` Job runs it on each new image, script or setting, and the deploy waits on it. Each
-  namespace's `health` CronJob runs it every five minutes, so a failing service shows as failed
-  Jobs. Both skip a planned downtime.
+  as the namespace's `smoke` identity with a service token for the service's audience. It also calls
+  the `/v2/healthcheck` of JSON Keys' public REST API, which takes no token. A `smoke-<hash>` Job
+  runs it on each new image, script or setting, and the deploy waits on it. Each namespace's
+  `health` CronJob runs it every five minutes, and JSON Keys' `health-rest` its public API's, so a
+  failing service shows as failed Jobs. Both skip a planned downtime.
 - **OpenAI call:** the `provider-check-<revision>` Job submits one small generation to GenAI, as
   its `smoke` identity, and polls it until it settles. It runs once for each new value of the
   cluster root's `genai_provider_check`, the deploy waits on it, and it fails unless the generation
@@ -172,7 +173,7 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 | Service          | Workloads                                                                                                       | Jobs                                                                                              |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| JSON Keys        | `grpc`: 2 to 3 pods                                                                                             | `migrations`, `rotate-keys`, `smoke`, `health`                                                    |
+| JSON Keys        | `grpc`: 2 to 3 pods; `rest`: 2 to 3 pods, which serve the public keys to the platforms                          | `migrations`, `rotate-keys`, `smoke`, `health`, `health-rest`                                     |
 | Authentication   | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
 | GenAI            | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
 | Narrative engine | `rest`: 2 to 3 pods, which only the smoke check calls until Studio does                                         | `migrations`, `smoke`, `health`                                                                   |
@@ -182,7 +183,9 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
 named callers: JSON Keys admits Authentication's and narrative-engine's APIs, GenAI admits
-narrative-engine's, Authentication admits the platforms, and each admits its own `smoke` identity. Authentication trusts the visitor address the platforms forward,
+narrative-engine's, Authentication admits the platforms, and each admits its own `smoke` identity.
+JSON Keys' public REST API takes no token: only its network policy limits it to the platforms and
+its `smoke` identity. Authentication trusts the visitor address the platforms forward,
 since only they call it on a visitor's behalf.
 
 People sign in on the account platform alone. Every other platform is one of Authentication's OAuth
@@ -359,7 +362,7 @@ archives it.
   That job runs in its own environment and identity, `grafana` and `infra-grafana`, apart from
   Google Cloud's production.
 - **Health checks** run in the cluster: each new image's `smoke-<hash>` Job, which the deploy waits
-  on, and each service's `health` CronJob, every five minutes. Grafana's `Scheduled job failing`
+  on, and each service's `health` CronJobs, every five minutes. Grafana's `Scheduled job failing`
   reports a failed run, as [Health checks](runbooks/alerts.md#health-checks) details.
 - **Budget alerts** email the cost and operations addresses when the [monthly budget](costs.md)
   reaches a threshold.

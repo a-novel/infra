@@ -14,7 +14,7 @@
 #   SERVICE_TOKEN_PATH  on the cluster, the file the kubelet projects a service token into, which
 #                       the check sends instead of an ID token.
 #   SSL_CERT_FILE       on the cluster, the services CA, which grpcurl and BusyBox wget verify the
-#                       service against.
+#                       service against. It marks a check on the cluster.
 #   PUBLIC              true for an http endpoint anyone may read, which then receives no token.
 #   DOWNTIME_START      the planned downtime's start, from which the check is skipped.
 #
@@ -48,7 +48,7 @@ answer="${TMPDIR:-/tmp}/health-answer"
 # grpcurl exits with 64 plus the gRPC status code; curl exits with 22 on an HTTP error status, and
 # BusyBox wget with 1. On the cluster, the service token goes in the header golib reads.
 check() {
-    case "${PROTOCOL:?}${SERVICE_TOKEN_PATH:+-cluster}" in
+    case "${PROTOCOL:?}${SSL_CERT_FILE:+-cluster}" in
     grpc)
         # Header expansion keeps the token out of the command-line arguments.
         # shellcheck disable=SC2016
@@ -68,8 +68,8 @@ check() {
     http-cluster)
         # The services' images carry only BusyBox wget, which takes headers as arguments, readable
         # only by the pod's own processes. Its TLS client reads SSL_CERT_FILE. Authentication's
-        # health endpoint answers 503 while a dependency is down.
-        wget -q -T 15 -O "${answer}" --header "X-Service-Authorization: ${SERVICE_TOKEN}" "${SERVICE_URL}${HEALTH_PATH:?}"
+        # health endpoint answers 503 while a dependency is down. A public endpoint gets no token.
+        wget -q -T 15 -O "${answer}" ${SERVICE_TOKEN:+--header "X-Service-Authorization: ${SERVICE_TOKEN}"} "${SERVICE_URL}${HEALTH_PATH:?}"
         ;;
     *)
         printf 'PROTOCOL must be grpc or http, not %s.\n' "${PROTOCOL}" >&2
