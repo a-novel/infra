@@ -158,19 +158,31 @@ state. Its title and message call the Grafana root's templates, as
 ## Grafana Cloud tokens
 
 Frontend Observability's API takes a Grafana Cloud access policy token, which no stack service
-account replaces, so bootstrap holds one for each CI identity of the Grafana root. Create each
-policy in the Cloud Portal, under **Security → Access policies**, with the production stack as its
-realm, then a token without an expiry:
+account replaces, so bootstrap holds one for each CI identity of the Grafana root. Access policies
+live in the Cloud Portal on grafana.com, not in the stack's Grafana. Create one policy and its token
+for each row of the table:
 
-| Secret                                  | Access policy  | Scopes                                                                                                        |
+1. Open the A-Novel organization's
+   [Access Policies](https://grafana.com/orgs/anovel/access-policies) page, which the portal's left
+   menu lists under **SECURITY**, and select **New access policy**.
+2. Enter the row's policy name as **Display name** and **Name**.
+3. Under **Realms**, open **Add a realm** and pick `anovel`, listed under `prod-eu-west-2`. The realm
+   below the field changes from `anovel (all stacks)` to `anovel`.
+4. Leave the **Scopes** table empty. Under **ADDITIONAL SCOPES**, add each of the row's scopes from
+   **Add scope**, then select **Create access policy**.
+5. Expand the token row at the bottom of the new policy's card and select **Add token**. Enter the
+   policy name as **Token name**, keep **Expiration** at **No expiry**, select **Create token** and
+   copy the token: Grafana shows it once.
+
+| Secret                                  | Policy name    | Scopes                                                                                                        |
 | --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
-| `production-grafana-cloud-plan-token`   | none           | `stacks:read`, `frontend-observability:read`                                                                  |
+| `production-grafana-cloud-plan-token`   | `infra-plan`   | `stacks:read`, `frontend-observability:read`                                                                  |
 | `production-grafana-cloud-deploy-token` | `infra-deploy` | `stacks:read`, `frontend-observability:read`, `frontend-observability:write`, `frontend-observability:delete` |
 
 Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
 the Grafana root's `token_versions`. Pull requests and the drift check read the plan token as
 `infra-reviewed-plan`, and deploys the deploy token as `infra-grafana`. For a leak, delete the token
-in the Cloud Portal as well as disabling its version.
+on the same Access Policies page as well as disabling its version.
 
 ## GitHub root keys
 
@@ -221,14 +233,13 @@ repository variables `AGENT_BOT_CLIENT_ID`, `AGENT_BOT_LOGIN`, `DEPENDENCY_BOT_C
 ## Alloy push token
 
 Alloy pushes metrics, logs and traces to the production stack with one access policy token. Create
-it in the stack's Grafana, under **Administration → Users and access → Cloud access policies**:
-
-- **Scopes:** `metrics:write`, `logs:write` and `traces:write`, and nothing else.
-- **Token:** no expiry.
+its policy and token as in [Grafana Cloud tokens](#grafana-cloud-tokens), named `alloy-push`, with
+only **WRITE** ticked for `metrics`, `logs` and `traces` in the **Scopes** table and no additional
+scope.
 
 Add the token as a version of `production-alloy-push-token`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in the cluster root's `addon_secret_versions`. For a
-leak, delete the token in Grafana as well as disabling its version.
+leak, delete the token on the Access Policies page as well as disabling its version.
 
 ## Audit access
 
