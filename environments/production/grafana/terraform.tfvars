@@ -7,7 +7,7 @@ stack_id = 1896612
 token_versions = {
   plan         = 2
   deploy       = 1
-  cloud_plan   = 1
+  cloud_plan   = 2
   cloud_deploy = 1
 }
 
