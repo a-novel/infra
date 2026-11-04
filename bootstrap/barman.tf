@@ -6,7 +6,7 @@ variable "cluster_databases" {
   })
 
   validation {
-    condition     = alltrue([for service in var.cluster_databases.services : contains(["json-keys", "authentication", "genai", "narrative-engine"], service)])
+    condition     = alltrue([for service in var.cluster_databases.services : contains(["json-keys", "authentication", "genai", "narrative-engine", "profile"], service)])
     error_message = "Select supported services."
   }
 }
