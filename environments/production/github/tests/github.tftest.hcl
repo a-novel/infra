@@ -18,6 +18,13 @@ override_module {
   target = module.a_novel_kit
 }
 
+override_data {
+  target = data.terraform_remote_state.grafana
+  values = {
+    outputs = { faro_app_ids = { "platform-account" = 1001, "platform-studio" = 1002 } }
+  }
+}
+
 run "plans_with_the_plan_app" {
   command = plan
 

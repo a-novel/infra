@@ -231,3 +231,20 @@ run "gives_a_repository_its_own_apps" {
     error_message = "A repository with Apps of its own names them to its workflows through repository variables."
   }
 }
+
+run "names_each_platform_its_faro_app" {
+  command = plan
+
+  variables {
+    faro_app_ids = { "service-genai" = 42 }
+  }
+
+  assert {
+    condition = (
+      toset(keys(github_actions_variable.faro_sourcemap_app_id)) == toset(["service-genai"]) &&
+      github_actions_variable.faro_sourcemap_app_id["service-genai"].variable_name == "FARO_SOURCEMAP_APP_ID" &&
+      github_actions_variable.faro_sourcemap_app_id["service-genai"].value == "42"
+    )
+    error_message = "A platform's release build reads its Faro app's ID from the FARO_SOURCEMAP_APP_ID repository variable."
+  }
+}

@@ -98,3 +98,13 @@ resource "github_actions_variable" "dedicated_bot" {
   variable_name = split(":", each.key)[1]
   value         = each.value.value
 }
+
+# A platform's release build reads its Faro app's ID here and its upload key from the sourcemaps
+# environment. The ID is no secret.
+resource "github_actions_variable" "faro_sourcemap_app_id" {
+  for_each = var.faro_app_ids
+
+  repository    = github_repository.this[each.key].name
+  variable_name = "FARO_SOURCEMAP_APP_ID"
+  value         = tostring(each.value)
+}

@@ -333,6 +333,10 @@ archives it.
 - **Only the guarded environments are managed:** `release`, with its reviewers, `governance` and
   `sourcemaps`, each open on the refs a ruleset guards. GitHub creates the others, such as
   `github-pages` and `copilot`.
+- **Each platform learns its Faro app from the Grafana root.** The root reads the Grafana root's
+  state and sets the platform's `FARO_SOURCEMAP_APP_ID` repository variable, where its release
+  build sends its source maps. The upload key is set by hand in the platform's `sourcemaps`
+  environment, as [Source-map upload keys](runbooks/secrets.md#source-map-upload-keys) describes.
 
 - **Each organization has two GitHub Apps.** Pull requests plan with the read-only Plan App, and
   deploys apply with the Deploy App, as [GitHub root keys](runbooks/secrets.md#github-root-keys)
