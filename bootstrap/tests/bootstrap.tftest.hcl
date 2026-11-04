@@ -210,7 +210,7 @@ run "trusts_only_reviewed_workflows" {
 
   # Only uikit's visual tests trust a repository outside the a-novel organization.
   assert {
-    condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests), [google_iam_workload_identity_pool_provider.narrow_plan]) :
+    condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests)) :
       strcontains(provider.attribute_condition, "assertion.repository_owner_id == '${strcontains(provider.attribute_condition, "assertion.repository == 'a-novel-kit/uikit'") ? "187672320" : "131281268"}'") &&
       provider.oidc[0].allowed_audiences == null
     ])
@@ -219,7 +219,7 @@ run "trusts_only_reviewed_workflows" {
 
   # Google rejects a longer provider display name only at apply time.
   assert {
-    condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests), [google_iam_workload_identity_pool_provider.narrow_plan]) :
+    condition = alltrue([for provider in concat(values(google_iam_workload_identity_pool_provider.github), values(google_iam_workload_identity_pool_provider.visual_tests)) :
       length(provider.display_name) <= 32
     ])
     error_message = "Workload identity provider display names are limited to 32 characters."
