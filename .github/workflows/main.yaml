@@ -79,7 +79,7 @@ jobs:
       - name: Scan infrastructure, dependencies and secrets
         env:
           # renovate: datasource=docker depName=docker.io/aquasec/trivy
-          version: "0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
+          version: "0.76.1@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
         run: >-
           docker run --rm --volume "$PWD:/src:ro" --workdir /src "docker.io/aquasec/trivy:$version"
           fs --disable-telemetry --scanners vuln,misconfig,secret --severity HIGH,CRITICAL
