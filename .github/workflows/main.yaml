@@ -74,6 +74,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # trivy-action's setup downloads Trivy from get.trivy.dev, which stopped resolving on
+      # 2026-11-03 (aquasecurity/setup-trivy#42), so the job installs the GitHub release asset
+      # itself. A version bump fails the checksum until TRIVY_SHA256 moves with it.
+      - name: Install Trivy
+        env:
+          # renovate: datasource=github-releases depName=aquasecurity/trivy
+          version: v0.75.0
+          TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+        run: |
+          set -euo pipefail
+          file="trivy_${version#v}_Linux-64bit.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$file" \
+            "https://github.com/aquasecurity/trivy/releases/download/$version/$file"
+          echo "$TRIVY_SHA256  $RUNNER_TEMP/$file" | sha256sum --check --quiet
+          mkdir -p "$RUNNER_TEMP/trivy"
+          tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP/trivy" trivy
+          echo "$RUNNER_TEMP/trivy" >> "$GITHUB_PATH"
+
       - name: Scan infrastructure, dependencies and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -91,8 +109,7 @@ jobs:
           format: table
           hide-progress: true
           cache: false
-          # renovate: datasource=github-releases depName=aquasecurity/trivy
-          version: v0.75.0
+          skip-setup-trivy: true
 
   # The fleet's gitleaks rules, beside trivy's secret scanner above.
   scan-secrets:
