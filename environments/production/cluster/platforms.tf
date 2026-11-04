@@ -14,6 +14,7 @@ locals {
   # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
     AUTHENTICATION_SERVICE_URL = "https://rest.authentication.svc:${local.authentication_env.REST_PORT}"
+    JSON_KEYS_SERVICE_URL      = "https://rest.json-keys.svc:${local.json_keys_rest_env.REST_PORT}"
     # The load balancer appends the visitor's address, then its own, so the second entry from the
     # right is the only one a visitor cannot forge. Authentication rate-limits by the address the
     # platform forwards.
@@ -56,8 +57,8 @@ module "platform_web" {
   replicas = { min = 2, max = 3 }
 }
 
-# The load balancer reaches each platform, which calls Authentication's API and reads the planned
-# downtime document from GitHub (egress.tf).
+# The load balancer reaches each platform, which calls Authentication's API, reads JSON Keys' public
+# keys and reads the planned downtime document from GitHub (egress.tf).
 resource "kubernetes_network_policy_v1" "platform_web" {
   for_each = local.platforms
 
@@ -90,12 +91,16 @@ resource "kubernetes_network_policy_v1" "platform_web" {
     }
 
     egress {
-      to {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "authentication" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "rest" }
+      dynamic "to" {
+        for_each = ["authentication", "json-keys"]
+
+        content {
+          namespace_selector {
+            match_labels = { "kubernetes.io/metadata.name" = to.value }
+          }
+          pod_selector {
+            match_labels = { "app.kubernetes.io/name" = "rest" }
+          }
         }
       }
 

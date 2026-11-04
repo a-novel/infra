@@ -146,10 +146,11 @@ runs its largest size.
 
 ## Health checks
 
-Each service's `health` CronJob runs the shared health check every five minutes, and each new
-image's `smoke-<hash>` Job runs it once, which the deploy waits on. The check retries for two
-minutes, so a failed run means the service failed for that long. Both skip while a planned downtime
-runs. Read the failed Job's log, which prints the service's answer:
+Each service's `health` CronJob, and `health-rest` for JSON Keys' public keys, runs the shared
+health check every five minutes, and each new image's `smoke-<hash>` Job runs it once, which the
+deploy waits on. The check retries for two minutes, so a failed run means the service failed for
+that long. Both skip while a planned downtime runs. Read the failed Job's log, which prints the
+service's answer:
 
 ```bash
 SERVICE=authentication

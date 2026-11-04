@@ -1,31 +1,35 @@
-# Each service's health check: JSON Keys' and GenAI's Status RPC, and Authentication's and
-# narrative-engine's health endpoints. A Job checks each new image, script or setting, and the deploy
-# waits on it; a CronJob checks every five minutes, so a failing service shows as failed Jobs. Both
-# call as the namespace's smoke identity, which each service admits, with the service token the
-# kubelet projects for its audience. A planned downtime skips the check, and clearing it runs the Job
-# again.
+# Each service API's health check: JSON Keys' and GenAI's Status RPC, and the health endpoints of
+# Authentication, narrative-engine and JSON Keys' public keys. A Job checks each new image, script or
+# setting, and the deploy waits on it; a CronJob checks every five minutes, so a failing service
+# shows as failed Jobs. Both call as the namespace's smoke identity, which each API admits, with the
+# service token the kubelet projects for its audience, or none for a public API. A planned downtime
+# skips the check, and clearing it runs the Job again.
 locals {
   health_check_script = file("${path.module}/../../../modules/smoke-check/smoke.sh")
-  # Each check runs in its service's own image, which carries grpcurl or BusyBox wget, and verifies
-  # its service against the services CA, which both read from SSL_CERT_FILE.
+  # Each check runs in the image of the pods it checks, which carries grpcurl or BusyBox wget, and
+  # verifies them against the services CA, which both read from SSL_CERT_FILE. A check takes its
+  # service's name, and the check of a service's second API adds that API's workload.
   health_check_targets = {
-    authentication   = { image = "authentication/rest", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
-    genai            = { image = "genai/grpc", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
-    json-keys        = { image = "json-keys/grpc", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
-    narrative-engine = { image = "narrative-engine/rest", pods = "rest", audience = local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
+    authentication   = { service = "authentication", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
+    genai            = { service = "genai", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
+    json-keys        = { service = "json-keys", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
+    json-keys-rest   = { service = "json-keys", pods = "rest", audience = null, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck", PUBLIC = "true" } }
+    narrative-engine = { service = "narrative-engine", pods = "rest", audience = local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
   }
-  health_checks = { for service, target in local.health_check_targets : service => merge(target, {
-    env = merge(target.env, local.downtime_env[service], {
-      SERVICE_URL        = "https://${target.pods}.${service}.svc:${local.service_port}"
-      SSL_CERT_FILE      = "/etc/service-ca/ca.crt"
-      SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.audience}"
-    })
+  health_checks = { for name, target in local.health_check_targets : name => merge(target, {
+    image = "${target.service}/${target.pods}"
+    env = merge(target.env, local.downtime_env[target.service], {
+      SERVICE_URL   = "https://${target.pods}.${target.service}.svc:${local.service_port}"
+      SSL_CERT_FILE = "/etc/service-ca/ca.crt"
+    }, target.audience == null ? {} : { SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.audience}" })
   }) }
+  # Each namespace's checks share its smoke identity and policy.
+  health_check_namespaces = toset([for check in values(local.health_checks) : check.service])
 }
 
 # The check calls no Kubernetes API, so its pods mount no token for it.
 resource "kubernetes_service_account_v1" "smoke" {
-  for_each = local.health_checks
+  for_each = local.health_check_namespaces
 
   metadata {
     name      = "smoke"
@@ -35,9 +39,9 @@ resource "kubernetes_service_account_v1" "smoke" {
   automount_service_account_token = false
 }
 
-# The check reaches only the pods it checks. Their own policies admit it.
+# The checks reach only the pods they check. Their own policies admit them.
 resource "kubernetes_network_policy_v1" "smoke" {
-  for_each = local.health_checks
+  for_each = local.health_check_namespaces
 
   metadata {
     name      = "smoke"
@@ -51,9 +55,13 @@ resource "kubernetes_network_policy_v1" "smoke" {
     policy_types = ["Egress"]
 
     egress {
-      to {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = each.value.pods }
+      dynamic "to" {
+        for_each = [for check in values(local.health_checks) : check.pods if check.service == each.key]
+
+        content {
+          pod_selector {
+            match_labels = { "app.kubernetes.io/name" = to.value }
+          }
         }
       }
 
@@ -72,7 +80,7 @@ resource "kubernetes_job_v1" "smoke" {
 
   metadata {
     name      = "smoke-${substr(sha256(jsonencode([local.release_image[each.value.image], each.value.env, local.health_check_script])), 0, 12)}"
-    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+    namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
   }
 
   spec {
@@ -86,7 +94,7 @@ resource "kubernetes_job_v1" "smoke" {
 
       spec {
         restart_policy                  = "Never"
-        service_account_name            = kubernetes_service_account_v1.smoke[each.key].metadata[0].name
+        service_account_name            = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
         automount_service_account_token = false
         enable_service_links            = false
 
@@ -115,10 +123,14 @@ resource "kubernetes_job_v1" "smoke" {
             }
           }
 
-          volume_mount {
-            name       = "service-token"
-            mount_path = "/var/run/secrets/tokens"
-            read_only  = true
+          dynamic "volume_mount" {
+            for_each = each.value.audience == null ? [] : ["service-token"]
+
+            content {
+              name       = volume_mount.value
+              mount_path = "/var/run/secrets/tokens"
+              read_only  = true
+            }
           }
 
           volume_mount {
@@ -148,14 +160,18 @@ resource "kubernetes_job_v1" "smoke" {
           }
         }
 
-        volume {
-          name = "service-token"
+        dynamic "volume" {
+          for_each = each.value.audience == null ? [] : [each.value.audience]
 
-          projected {
-            sources {
-              service_account_token {
-                audience = each.value.audience
-                path     = each.value.audience
+          content {
+            name = "service-token"
+
+            projected {
+              sources {
+                service_account_token {
+                  audience = volume.value
+                  path     = volume.value
+                }
               }
             }
           }
@@ -195,17 +211,18 @@ resource "kubernetes_job_v1" "smoke" {
   }
 
   # Each check needs its service rolled out and reachable, Authentication's mail relay included.
-  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.narrative_engine_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
+  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.json_keys_rest, module.narrative_engine_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
 }
 
-# The CronJob runs the same check on a schedule. The script retries for two minutes, so a failed run
-# means the service failed for that long.
+# The CronJob runs the same check on a schedule, as health, or health-<workload> for a service's
+# second API. The script retries for two minutes, so a failed run means the service failed for that
+# long.
 resource "kubernetes_cron_job_v1" "health" {
   for_each = var.custom_resources ? local.health_checks : {}
 
   metadata {
-    name      = "health"
-    namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name
+    name      = each.key == each.value.service ? "health" : "health-${each.value.pods}"
+    namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
   }
 
   spec {
@@ -228,7 +245,7 @@ resource "kubernetes_cron_job_v1" "health" {
 
           spec {
             restart_policy                  = "Never"
-            service_account_name            = kubernetes_service_account_v1.smoke[each.key].metadata[0].name
+            service_account_name            = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
             automount_service_account_token = false
             enable_service_links            = false
 
@@ -257,10 +274,14 @@ resource "kubernetes_cron_job_v1" "health" {
                 }
               }
 
-              volume_mount {
-                name       = "service-token"
-                mount_path = "/var/run/secrets/tokens"
-                read_only  = true
+              dynamic "volume_mount" {
+                for_each = each.value.audience == null ? [] : ["service-token"]
+
+                content {
+                  name       = volume_mount.value
+                  mount_path = "/var/run/secrets/tokens"
+                  read_only  = true
+                }
               }
 
               volume_mount {
@@ -290,14 +311,18 @@ resource "kubernetes_cron_job_v1" "health" {
               }
             }
 
-            volume {
-              name = "service-token"
+            dynamic "volume" {
+              for_each = each.value.audience == null ? [] : [each.value.audience]
 
-              projected {
-                sources {
-                  service_account_token {
-                    audience = each.value.audience
-                    path     = each.value.audience
+              content {
+                name = "service-token"
+
+                projected {
+                  sources {
+                    service_account_token {
+                      audience = volume.value
+                      path     = volume.value
+                    }
                   }
                 }
               }

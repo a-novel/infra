@@ -65,7 +65,7 @@ module "authentication_rest" {
   namespace        = kubernetes_namespace_v1.service["authentication"].metadata[0].name
   image            = local.release_image["authentication/rest"]
   port             = local.service_port
-  tls              = { secret = kubernetes_manifest.service_server_certificate["authentication"].manifest.spec.secretName }
+  tls              = { secret = kubernetes_manifest.service_server_certificate["authentication/rest"].manifest.spec.secretName }
   service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
   http_health_path = "/v2/ping"
   env              = local.authentication_env

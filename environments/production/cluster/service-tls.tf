@@ -2,13 +2,16 @@
 # cross the cluster only over TLS (RFC 6749 §3.2 and §10.3). trust-manager copies the CA's
 # certificate into each namespace that calls a service.
 locals {
-  # Each service API that serves TLS, by namespace: its workload, whose Service name its certificate
-  # names.
+  # Each service API that serves TLS, by namespace: its workloads, each with a certificate that names
+  # its Service.
   service_tls = {
-    authentication   = "rest"
-    genai            = "grpc"
-    json-keys        = "grpc"
-    narrative-engine = "rest"
+    authentication   = ["rest"]
+    genai            = ["grpc"]
+    json-keys        = ["grpc", "rest"]
+    narrative-engine = ["rest"]
+  }
+  service_apis = { for api in flatten([for namespace, workloads in local.service_tls : [for workload in workloads : { namespace = namespace, workload = workload }]]) :
+    "${api.namespace}/${api.workload}" => api
   }
   # The port each API serves TLS on.
   service_port = 8443
@@ -67,19 +70,19 @@ resource "kubernetes_manifest" "service_issuer" {
   }
 }
 
-# Each certificate names its API's in-cluster host, so one service's key cannot pass for another's.
-# The server loads it again at renewal.
+# Each certificate names its API's in-cluster host, so one API's key cannot pass for another's. The
+# server loads it again at renewal.
 resource "kubernetes_manifest" "service_server_certificate" {
-  for_each = var.custom_resources ? local.service_tls : {}
+  for_each = var.custom_resources ? local.service_apis : {}
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
     kind       = "Certificate"
-    metadata   = { name = "${each.value}-server", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
+    metadata   = { name = "${each.value.workload}-server", namespace = kubernetes_namespace_v1.service[each.value.namespace].metadata[0].name }
     spec = {
-      secretName = "${each.value}-server-tls"
+      secretName = "${each.value.workload}-server-tls"
       usages     = ["server auth"]
-      dnsNames   = ["${each.value}.${kubernetes_namespace_v1.service[each.key].metadata[0].name}.svc"]
+      dnsNames   = ["${each.value.workload}.${kubernetes_namespace_v1.service[each.value.namespace].metadata[0].name}.svc"]
       issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.service_issuer[0].manifest.metadata.name }
     }
   }
@@ -120,4 +123,24 @@ resource "kubernetes_manifest" "service_trust_bundle" {
   }
 
   depends_on = [helm_release.trust_manager]
+}
+
+moved {
+  from = kubernetes_manifest.service_server_certificate["authentication"]
+  to   = kubernetes_manifest.service_server_certificate["authentication/rest"]
+}
+
+moved {
+  from = kubernetes_manifest.service_server_certificate["genai"]
+  to   = kubernetes_manifest.service_server_certificate["genai/grpc"]
+}
+
+moved {
+  from = kubernetes_manifest.service_server_certificate["json-keys"]
+  to   = kubernetes_manifest.service_server_certificate["json-keys/grpc"]
+}
+
+moved {
+  from = kubernetes_manifest.service_server_certificate["narrative-engine"]
+  to   = kubernetes_manifest.service_server_certificate["narrative-engine/rest"]
 }
