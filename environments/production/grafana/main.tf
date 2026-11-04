@@ -45,6 +45,9 @@ provider "grafana" {
   stack_id = var.stack_id
   auth     = ephemeral.google_secret_manager_secret_version.grafana_token.secret_data
 
+  # A Frontend Observability app reads its stack's region from the Grafana Cloud API before calling
+  # Frontend Observability's, and the one access policy token serves both.
+  cloud_access_policy_token      = ephemeral.google_secret_manager_secret_version.grafana_cloud_token.secret_data
   frontend_o11y_api_access_token = ephemeral.google_secret_manager_secret_version.grafana_cloud_token.secret_data
 
   # Grafana Cloud sometimes answers 503 for longer than the three default retries wait (14 seconds).
