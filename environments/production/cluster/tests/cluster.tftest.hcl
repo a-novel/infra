@@ -915,6 +915,7 @@ run "runs_profile" {
       length(one(kubernetes_network_policy_v1.profile_rest.spec).ingress) == 1 &&
       [for peer in one(one(kubernetes_network_policy_v1.profile_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "profile")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["account:web", "profile:smoke"] &&
       toset(split(",", local.profile_env.SERVICE_TOKEN_CALLERS)) == toset([module.platform_web["account"].service_account, "system:serviceaccount:profile:smoke"]) &&
+      local.profile_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
       [for platform, services in local.platform_services : platform if contains(keys(services), "profile")] == ["account"] &&
       one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames) == "${module.profile_rest[0].service.name}.profile.svc" &&
       local.platform_env.account.PROFILE_SERVICE_URL == "https://${one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames)}:${local.profile_env.REST_PORT}" &&
@@ -923,7 +924,7 @@ run "runs_profile" {
       ], "profile/${module.profile_rest[0].pod_labels["app.kubernetes.io/name"]}") &&
       contains([for port in one(one(kubernetes_network_policy_v1.platform_web["account"].spec).egress).ports : port.port], local.profile_env.REST_PORT)
     )
-    error_message = "Only the account platform and the smoke check may call profile's API, over TLS at the name its certificate carries, and the account platform must reach it."
+    error_message = "Only the account platform and the smoke check may call profile's API, over TLS at the name its certificate carries, the account platform must reach it, and profile must trust the visitor IP it forwards."
   }
 }
 

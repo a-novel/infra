@@ -12,6 +12,9 @@ locals {
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "profile"
     SERVICE_TOKEN_CALLERS   = "${local.platform_callers.account},system:serviceaccount:profile:smoke"
+    # Only the account platform calls the API for its visitors, so it can trust the visitor IP the
+    # platform forwards. Without it, every visitor would share the platform's rate limit.
+    REST_CLIENT_IP_HEADER = "X-Client-IP"
   })
 }
 
