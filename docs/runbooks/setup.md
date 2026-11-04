@@ -75,8 +75,8 @@ The organization's Renovate (Dependencies) and Agent Apps need access to this re
 Some rules sit above the projects, where no CI identity holds a role. An organization admin sets
 them by hand, once:
 
-- **A deny policy** keeps the plan identity away from logs and traces. Pull requests can mint
-  `infra-plan`, and its Viewer role reads everything else a plan needs.
+- **A deny policy** keeps the plan identity away from log entries and traces, which its logging
+  role would otherwise read. Pull requests can mint `infra-plan`.
 - **The access policy** holds the service perimeter, which foundation manages. The deploy identity
   edits the policy and the plan identity reads it. Both also read the organization's access
   policies, which Artifact Registry checks whenever its VPC Service Controls setting is set or

@@ -190,6 +190,11 @@ run "grants_no_basic_roles" {
   }
 
   assert {
+    condition     = alltrue([for binding in values(google_project_iam_member.plan) : !contains(["roles/owner", "roles/editor", "roles/viewer"], binding.role)])
+    error_message = "The plan identity holds no basic role: Viewer reads the pods' logs, which no deny policy can refuse."
+  }
+
+  assert {
     condition = (
       alltrue([for principal in var.database_operator_principals : google_project_iam_member.database_operator["${principal}:roles/container.clusterViewer"].role == "roles/container.clusterViewer"]) &&
       [for binding in values(google_project_iam_member.database_operator) : binding.role if startswith(binding.role, "roles/container.")] == [for principal in var.database_operator_principals : "roles/container.clusterViewer"]

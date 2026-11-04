@@ -112,9 +112,9 @@ of the `plan` environment admits its run. `infra-plan` reads:
 - **every root's state**, which holds no secret value;
 - **in the management project**, the configuration of IAM, service accounts, Workload Identity,
   Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, never a secret's value;
-- **in the workload project**, what the Viewer role reads, except Cloud Logging and Cloud Trace,
-  which an organization deny policy removes. On the cluster, it reads every object but Secrets, and
-  the pods' logs, which Viewer grants and no deny policy can remove;
+- **in the workload project**, the configuration of every resource foundation manages, through
+  foundation's `plan_project_roles`, but no log entry or trace, which an organization deny policy
+  refuses. On the cluster, it reads every object but Secrets, and never the pods' logs;
 - **the organization's access policies**, which hold the service perimeter.
 
 `infra-reviewed-plan` reads the Grafana and GitHub roots' state, the Grafana plan token and the

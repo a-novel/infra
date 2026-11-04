@@ -2,15 +2,12 @@ locals {
   automation_service_accounts = {
     foundation = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
     plan       = "infra-plan@${var.management_project_id}.iam.gserviceaccount.com"
-    # Temporary, until infra-plan holds plan_project_roles alone (bootstrap's narrow-plan.tf).
-    narrow_plan = "infra-narrow-plan@${var.management_project_id}.iam.gserviceaccount.com"
   }
 
-  # What the plan identities read here: the configuration of every resource foundation manages, and
+  # What the plan identity reads here: the configuration of every resource foundation manages, and
   # every object in the cluster but Secrets. The logging role reads the log buckets' settings, and
-  # the deny policy refuses its log entries. Viewer, which infra-plan still holds, also reads the
-  # pods' logs, which no deny policy can refuse, so these roles replace it once infra-narrow-plan
-  # proves them.
+  # the deny policy refuses its log entries. Basic Viewer would also read the pods' logs, which no
+  # deny policy can refuse (a-novel/infra#1512).
   plan_project_roles = toset([
     "roles/artifactregistry.viewer",
     "roles/certificatemanager.viewer",
@@ -25,11 +22,6 @@ locals {
     "roles/networksecurity.viewer",
     "roles/serviceusage.serviceUsageViewer",
   ])
-
-  plan_project_bindings = {
-    for binding in setproduct(["plan", "narrow_plan"], local.plan_project_roles) :
-    "${binding[0]}:${binding[1]}" => { account = binding[0], role = binding[1] }
-  }
 
   runtime_identities = {
     cluster_nodes = {
@@ -110,26 +102,14 @@ resource "google_project_iam_member" "foundation_project_metadata" {
   member  = "serviceAccount:${local.automation_service_accounts.foundation}"
 }
 
-# Pull-request and drift plans read the project's configuration as the plan identity, which
-# holds no data-access role.
-resource "google_project_iam_member" "plan_viewer" {
-  project = google_project.workload.project_id
-  role    = "roles/viewer"
-  member  = "serviceAccount:${local.automation_service_accounts.plan}"
-}
-
-# The plan identities reach the cluster through its DNS endpoint.
+# Pull-request and drift plans read the project's configuration as the plan identity, which reaches
+# the cluster through its DNS endpoint.
 resource "google_project_iam_member" "plan" {
-  for_each = local.plan_project_bindings
+  for_each = { for role in local.plan_project_roles : "plan:${role}" => role }
 
   project = google_project.workload.project_id
-  role    = each.value.role
-  member  = "serviceAccount:${local.automation_service_accounts[each.value.account]}"
-}
-
-moved {
-  from = google_project_iam_member.plan_cluster_viewer
-  to   = google_project_iam_member.plan["plan:roles/container.viewer"]
+  role    = each.value
+  member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
 # Managed instance groups, the cluster's node pools included, act through Google's project service
