@@ -1,6 +1,6 @@
 # Narrative-engine's REST API, which stores each project's Scenes Composer and runs its AI suggestions
-# through GenAI. Only its smoke check calls it until Studio does (a-novel/.github#542). Its streams
-# and generation submits stay inside the cluster, so no load balancer times them.
+# through GenAI. Studio calls it for its writers (a-novel/.github#565), and relays its streams through
+# a backend that lets them last (platforms.tf).
 locals {
   narrative_engine_env = merge(local.database_env["narrative-engine"], local.downtime_env["narrative-engine"], local.telemetry_env["narrative-engine"].api, {
     # A read of a whole project takes up to 128 MiB, and the reads together half of this limit: one
@@ -17,7 +17,9 @@ locals {
     SERVICE_GENAI_TLS       = "true"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "narrative-engine"
-    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:narrative-engine:smoke"
+    SERVICE_TOKEN_CALLERS   = join(",", [local.platform_callers.studio, "system:serviceaccount:narrative-engine:smoke"])
+    # Only Studio calls the API for its writers, so it can trust the visitor IP Studio forwards.
+    REST_CLIENT_IP_HEADER = "X-Client-IP"
   })
 }
 
@@ -50,8 +52,8 @@ module "narrative_engine_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# Only the smoke check calls the API, which calls JSON Keys and GenAI, and reaches the issuer's keys
-# through Google's restricted API addresses.
+# Studio's web pods and the smoke check call the API, which calls JSON Keys and GenAI, and reaches the
+# issuer's keys through Google's restricted API addresses.
 resource "kubernetes_network_policy_v1" "narrative_engine_rest" {
   metadata {
     name      = "rest"
@@ -65,6 +67,14 @@ resource "kubernetes_network_policy_v1" "narrative_engine_rest" {
     policy_types = ["Ingress", "Egress"]
 
     ingress {
+      from {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "studio" }
+        }
+        pod_selector {
+          match_labels = { "app.kubernetes.io/name" = "web" }
+        }
+      }
       from {
         pod_selector {
           match_labels = { "app.kubernetes.io/name" = "smoke" }
