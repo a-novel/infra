@@ -152,7 +152,7 @@
       "spec": {
         "id": 35,
         "title": "Account changes",
-        "description": "Each hour's forms outside the sign-in dialog, by form and status. The account page changes a password or an email and signs out; the email links create an invited account, confirm an email or reset a password. 200 and 303 completed the step. 400 refused an invalid form, 403 a wrong current password. A link also answers 303 once it has expired, and 503 when the visitor hit the rate limit: Refusals from the services tells them apart. Worry at any other 5xx.",
+        "description": "Each hour's forms outside the sign-in dialog, by form and status. The account page changes a password, an email, the username or the picture, and signs out; the email links create an invited account, confirm an email or reset a password. 200 and 303 completed the step. 400 refused an invalid form, 403 a wrong current password. A link also answers 303 once it has expired, and 503 when the visitor hit the rate limit: Refusals from the services tells them apart. Worry at any other 5xx.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -305,7 +305,7 @@
       "spec": {
         "id": 37,
         "title": "Calls to the services: p95",
-        "description": "How long the platform's server waits on each endpoint of Authentication and JSON Keys, at the 95th percentile. Every page a visitor with a session opens waits on GET /v2/session, so worry when it climbs.",
+        "description": "How long the platform's server waits on each endpoint of Authentication, JSON Keys and Profile, at the 95th percentile. Every page a visitor with a session opens waits on GET /v2/session and GET /v1/profile/self, so worry when either climbs.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -327,7 +327,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys)[.]svc\" } | quantile_over_time(duration, .95) by (span.http.request.method, span.url.path)"
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys|profile)[.]svc\" } | quantile_over_time(duration, .95) by (span.http.request.method, span.url.path)"
                     }
                   }
                 }
@@ -380,7 +380,7 @@
       "spec": {
         "id": 38,
         "title": "Refusals from the services",
-        "description": "Each hour's calls Authentication or JSON Keys answered with an error status, by endpoint and status: where a visitor's request met a limit, an expired link or a fault. Worry at any 5xx.",
+        "description": "Each hour's calls Authentication, JSON Keys or Profile answered with an error status, by endpoint and status: where a visitor's request met a limit, an expired link, a refused picture or a fault. A 404 on GET /v1/profile/self only means the visitor has no profile yet. Worry at any 5xx.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -402,7 +402,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys)[.]svc\" && span.http.response.status_code >= 400 } | count_over_time() by (span.http.request.method, span.url.path, span.http.response.status_code)"
+                      "query": "{ resource.service.name = \"platform-account\" && kind = client && span.server.address =~ \"rest[.](authentication|json-keys|profile)[.]svc\" && span.http.response.status_code >= 400 } | count_over_time() by (span.http.request.method, span.url.path, span.http.response.status_code)"
                     }
                   }
                 }
