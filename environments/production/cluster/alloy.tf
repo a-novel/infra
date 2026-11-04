@@ -15,14 +15,16 @@ locals {
 
   # Each request and job run, a server span or a trace's root, gets a_novel.outcome: what it asks of
   # an operator. A fault is our own failure, to fix now. A transient failure, an unreachable
-  # dependency, a timeout or a rate limit, matters once it lasts. An expected refusal, such as a
-  # missing session or an unknown record, answers the caller's own mistake. A later statement
-  # overrides an earlier one, and spans of neither kind get no outcome.
+  # dependency, a timeout or a rate limit, matters once it lasts. PostgreSQL's 57P01, 57P02 and 57P03,
+  # which golib's error.type names, are one: a database's server stopping or starting, as in a
+  # switchover. An expected refusal, such as a missing session or an unknown record, answers the
+  # caller's own mistake. A later statement overrides an earlier one, and spans of neither kind get no
+  # outcome.
   outcome_statements = [
     "set(attributes[\"a_novel.outcome\"], \"ok\") where kind == SPAN_KIND_SERVER or IsRootSpan()",
     "set(attributes[\"a_novel.outcome\"], \"expected\") where attributes[\"a_novel.outcome\"] != nil and ((attributes[\"http.response.status_code\"] >= 400 and attributes[\"http.response.status_code\"] < 500) or IsMatch(attributes[\"rpc.response.status_code\"], \"^(CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|UNAUTHENTICATED|FAILED_PRECONDITION|OUT_OF_RANGE)$\"))",
     "set(attributes[\"a_novel.outcome\"], \"fault\") where attributes[\"a_novel.outcome\"] != nil and status.code == STATUS_CODE_ERROR",
-    "set(attributes[\"a_novel.outcome\"], \"transient\") where attributes[\"a_novel.outcome\"] != nil and (attributes[\"http.response.status_code\"] == 429 or attributes[\"http.response.status_code\"] == 502 or attributes[\"http.response.status_code\"] == 503 or attributes[\"http.response.status_code\"] == 504 or IsMatch(attributes[\"rpc.response.status_code\"], \"^(UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|ABORTED)$\"))",
+    "set(attributes[\"a_novel.outcome\"], \"transient\") where attributes[\"a_novel.outcome\"] != nil and (attributes[\"http.response.status_code\"] == 429 or attributes[\"http.response.status_code\"] == 502 or attributes[\"http.response.status_code\"] == 503 or attributes[\"http.response.status_code\"] == 504 or IsMatch(attributes[\"rpc.response.status_code\"], \"^(UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|ABORTED)$\") or IsMatch(attributes[\"error.type\"], \"^57P0[123]$\"))",
   ]
 
   # Each image as the charts take it: our cache of its registry, its path, its tag and its digest.

@@ -13,7 +13,7 @@ locals {
   # the duration of every other request.
   probes = "grpc.health.v1.Health/Check"
 
-  # Faults are filed by hand from Discord. Each span's fault type fires while it recurs, and an error
+  # Faults are filed by hand from Discord. Each span's fault type fires while it recurs, and a fault
   # type the service has not raised for a week also fires as new. Transient failures count only
   # toward the failing share, and expected refusals toward nothing.
   service_rules = { for service, alert in var.alerts : service => [
@@ -58,10 +58,10 @@ locals {
       for       = "0s"
       dashboard = "errors"
       panel     = 7
-      summary   = "It raised {{ index $labels \"error_type\" }}, which it had not raised for a week."
+      summary   = "It faulted with {{ index $labels \"error_type\" }}, which it had not faulted with for a week."
       expr      = <<-EOT
-        group by (error_type) (increase(${local.calls}{service_name="${service}", error_type!=""}[10m]) > 0)
-          unless group by (error_type) (present_over_time(${local.calls}{service_name="${service}", error_type!=""}[1w] offset 10m))
+        group by (error_type) (increase(${local.calls}{service_name="${service}", a_novel_outcome="fault", error_type!=""}[10m]) > 0)
+          unless group by (error_type) (present_over_time(${local.calls}{service_name="${service}", a_novel_outcome="fault", error_type!=""}[1w] offset 10m))
       EOT
     },
   ] }
