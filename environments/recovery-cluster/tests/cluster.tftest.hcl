@@ -16,6 +16,7 @@ override_data {
         genai            = "a-novel-management-prod-232403541574-barman-genai"
         json-keys        = "a-novel-management-prod-232403541574-barman-json-keys"
         narrative-engine = "a-novel-management-prod-232403541574-barman-narrative-engine"
+        profile          = "a-novel-management-prod-232403541574-barman-profile"
       }
       barman_reader_role = "projects/a-novel-management-prod/roles/barmanReader"
     }
@@ -89,7 +90,7 @@ run "restores_every_service_by_default" {
   command = plan
 
   assert {
-    condition     = keys(google_storage_bucket_iam_member.backups) == ["authentication", "genai", "json-keys", "narrative-engine"]
+    condition     = keys(google_storage_bucket_iam_member.backups) == ["authentication", "genai", "json-keys", "narrative-engine", "profile"]
     error_message = "A drill must restore every cluster database unless told otherwise."
   }
 }
