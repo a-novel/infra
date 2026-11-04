@@ -214,7 +214,7 @@ run "sends_every_signal_to_grafana_through_alloy" {
     error_message = "Alloy must reach each database's metrics port alone."
   }
 
-  # Each workload exports to the receiver under its repository's name, as on Cloud Run.
+  # Each workload exports to the receiver under its repository's name.
   assert {
     condition = alltrue([for workload in concat([
       { env = local.json_keys_env, kind = "api" },
