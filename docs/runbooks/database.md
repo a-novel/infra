@@ -1,8 +1,8 @@
 # Databases
 
 This runbook is about the services' PostgreSQL databases. Each one is a CloudNativePG database named
-`database` in its service's namespace, `json-keys`, `authentication`, `genai` or
-`narrative-engine`: a primary and a replica, which archive to the service's Barman bucket.
+`database` in its service's namespace, `json-keys`, `authentication`, `genai`, `narrative-engine`
+or `profile`: a primary and a replica, which archive to the service's Barman bucket.
 [Architecture](../architecture.md#databases-and-backups) gives their sizes and backups.
 
 ## Inspect a database

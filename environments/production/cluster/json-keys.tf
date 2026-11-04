@@ -10,7 +10,7 @@ locals {
     GOMEMLIMIT              = "400MiB"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "json-keys"
-    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:narrative-engine:rest,system:serviceaccount:json-keys:smoke"
+    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:narrative-engine:rest,system:serviceaccount:profile:rest,system:serviceaccount:json-keys:smoke"
   })
   json_keys_rest_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], local.telemetry_env["json-keys"].api, {
     # Each request reads the keys from the database, and the platforms cache them for 30 minutes, so
@@ -69,8 +69,8 @@ module "json_keys_rest" {
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# Authentication's and narrative-engine's APIs and JSON Keys' smoke check call the server, which
-# reaches the issuer's keys through Google's restricted API addresses.
+# The Authentication, narrative-engine and profile APIs and JSON Keys' smoke check call the server,
+# which reaches the issuer's keys through Google's restricted API addresses.
 resource "kubernetes_network_policy_v1" "json_keys_grpc" {
   metadata {
     name      = "grpc"
@@ -85,7 +85,7 @@ resource "kubernetes_network_policy_v1" "json_keys_grpc" {
 
     ingress {
       dynamic "from" {
-        for_each = ["authentication", "narrative-engine"]
+        for_each = ["authentication", "narrative-engine", "profile"]
 
         content {
           namespace_selector {

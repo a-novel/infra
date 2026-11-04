@@ -1,0 +1,29 @@
+# Profile's own numbers. CloudNativePG runs the query on the primary at every scrape, and exports
+# each column as cnpg_<query>_<column>. It reads no picture or owner, and exports no username, only
+# counts. profile.sql grants every column it reads.
+
+# The aggregate returns a row from an empty table, so no profile reads as 0 rather than as no data.
+# A picture lives out of line, in the table's TOAST storage, so the scan reads only the small rows.
+profiles:
+  query: |
+    SELECT
+      count(*) AS total,
+      count(username) AS with_username,
+      count(picture_updated_at) AS with_picture,
+      count(*) FILTER (WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '7 days') AS created_7d
+    FROM profiles
+  primary: true
+  target_databases: ["app"]
+  metrics:
+    - total:
+        usage: GAUGE
+        description: Profiles.
+    - with_username:
+        usage: GAUGE
+        description: Of those, profiles with a username.
+    - with_picture:
+        usage: GAUGE
+        description: Of those, profiles with a picture.
+    - created_7d:
+        usage: GAUGE
+        description: Of those, profiles created in the last 7 days.

@@ -9,6 +9,7 @@ locals {
     genai            = ["grpc"]
     json-keys        = ["grpc", "rest"]
     narrative-engine = ["rest"]
+    profile          = ["rest"]
   }
   service_apis = { for api in flatten([for namespace, workloads in local.service_tls : [for workload in workloads : { namespace = namespace, workload = workload }]]) :
     "${api.namespace}/${api.workload}" => api

@@ -1,7 +1,7 @@
 # Each service API's health check: JSON Keys' and GenAI's Status RPC, and the health endpoints of
-# Authentication, narrative-engine and JSON Keys' public keys. A Job checks each new image, script or
-# setting, and the deploy waits on it; a CronJob checks every five minutes, so a failing service
-# shows as failed Jobs. Both call as the namespace's smoke identity, which each API admits, with the
+# Authentication, narrative-engine, profile and JSON Keys' public keys. A Job checks each new image,
+# script or setting, and the deploy waits on it; a CronJob checks every five minutes, so a failing
+# service shows as failed Jobs. Both call as the namespace's smoke identity, which each API admits, with the
 # service token the kubelet projects for its audience, or none for a public API. A planned downtime
 # skips the check, and clearing it runs the Job again.
 locals {
@@ -15,6 +15,7 @@ locals {
     json-keys        = { service = "json-keys", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
     json-keys-rest   = { service = "json-keys", pods = "rest", audience = null, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck", PUBLIC = "true" } }
     narrative-engine = { service = "narrative-engine", pods = "rest", audience = local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
+    profile          = { service = "profile", pods = "rest", audience = local.profile_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
   }
   health_checks = { for name, target in local.health_check_targets : name => merge(target, {
     image = "${target.service}/${target.pods}"
@@ -211,7 +212,7 @@ resource "kubernetes_job_v1" "smoke" {
   }
 
   # Each check needs its service rolled out and reachable, Authentication's mail relay included.
-  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.json_keys_rest, module.narrative_engine_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
+  depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.json_keys_rest, module.narrative_engine_rest, module.profile_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
 }
 
 # The CronJob runs the same check on a schedule, as health, or health-<workload> for a service's

@@ -8,6 +8,7 @@ locals {
     genai            = ["database", "grpc", "migrations", "sweep"]
     json-keys        = ["database", "grpc", "migrations", "rest", "rotatekeys"]
     narrative-engine = ["database", "migrations", "rest"]
+    profile          = ["database", "migrations", "rest"]
     studio           = ["web"]
   }
   release_registry = "${regex("^(.+)-[a-z]$", local.cluster.location)[0]}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}"

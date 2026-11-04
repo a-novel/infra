@@ -35,6 +35,9 @@ alerts = {
   # A stream stays open for up to five minutes, and a generation submit waits on GenAI for two calls
   # of up to 35 seconds each.
   "service-narrative-engine" = { failure_rate = 0.05, p95_seconds = 2, latency_ignores = ["GET /v1/(project|generation)/stream", "POST /v1/generation"] }
+  # Nothing measures its p95 before the account platform calls it. A picture upload decodes the whole
+  # image, and its health check reaches the database and JSON Keys.
+  "service-profile" = { failure_rate = 0.05, p95_seconds = 2 }
 }
 
 thresholds = {
