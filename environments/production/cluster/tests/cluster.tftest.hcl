@@ -834,11 +834,40 @@ run "runs_narrative_engine" {
   assert {
     condition = (
       length(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress) == 1 &&
-      [for peer in one(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == ["smoke"] &&
-      local.narrative_engine_env.SERVICE_TOKEN_CALLERS == "system:serviceaccount:narrative-engine:smoke" &&
+      [for peer in one(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "narrative-engine")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["studio:web", "narrative-engine:smoke"] &&
+      toset(split(",", local.narrative_engine_env.SERVICE_TOKEN_CALLERS)) == toset([module.platform_web["studio"].service_account, "system:serviceaccount:narrative-engine:smoke"]) &&
+      local.narrative_engine_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
       one(kubernetes_manifest.service_server_certificate["narrative-engine/rest"].manifest.spec.dnsNames) == "${module.narrative_engine_rest[0].service.name}.narrative-engine.svc"
     )
-    error_message = "Only narrative-engine's smoke check may call its API until Studio does, over TLS."
+    error_message = "Only Studio's web pods and narrative-engine's smoke check may call its API, over TLS, and it must trust the visitor IP Studio forwards."
+  }
+}
+
+# Studio calls narrative-engine for its writers and relays its 5-minute streams (a-novel/.github#565).
+run "lets_studio_call_narrative_engine" {
+  command = plan
+
+  variables {
+    custom_resources = true
+  }
+
+  assert {
+    condition = (
+      local.platform_env.studio.NARRATIVE_ENGINE_SERVICE_URL == "https://${module.narrative_engine_rest[0].service.name}.narrative-engine.svc:${module.narrative_engine_rest[0].service.port}" &&
+      !contains(keys(local.platform_env.account), "NARRATIVE_ENGINE_SERVICE_URL") &&
+      contains([for peer in one(one(kubernetes_network_policy_v1.platform_web["studio"].spec).egress).to : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]], "narrative-engine") &&
+      !contains([for peer in one(one(kubernetes_network_policy_v1.platform_web["account"].spec).egress).to : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]], "narrative-engine")
+    )
+    error_message = "Studio alone must reach narrative-engine's API, by the name its certificate carries."
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.studio_backend_policy[0].manifest.spec.default.timeoutSec > 300 &&
+      kubernetes_manifest.studio_backend_policy[0].manifest.spec.targetRef.name == module.platform_web["studio"].service.name &&
+      kubernetes_manifest.studio_backend_policy[0].manifest.metadata.namespace == "studio"
+    )
+    error_message = "Studio's backend must let a relayed stream run its 5 minutes, past the load balancer's 30-second default."
   }
 }
 

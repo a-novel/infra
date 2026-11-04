@@ -7,8 +7,12 @@ locals {
   platforms = {
     # The app list opens Studio.
     account = { STUDIO_URL = "https://${local.platform_edges.studio.host}" }
-    # The account name opens the account platform.
-    studio = { ACCOUNT_URL = "https://${local.platform_edges.account.host}" }
+    # The account name opens the account platform. Studio also calls narrative-engine for the
+    # Scenes Composer (a-novel/.github#565).
+    studio = {
+      ACCOUNT_URL                  = "https://${local.platform_edges.account.host}"
+      NARRATIVE_ENGINE_SERVICE_URL = "https://rest.narrative-engine.svc:${local.service_port}"
+    }
   }
   # A platform takes each request's origin from its Host header, over https: only the HTTPS
   # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
@@ -48,9 +52,13 @@ module "platform_web" {
   port             = local.platform_port
   http_health_path = "/ping"
   env              = local.platform_env[each.key]
-  service_tokens   = { (local.authentication_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
-  service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
-  resources        = { cpu = "100m", memory = "512Mi" }
+  # Each service a platform calls gets a token for its own audience.
+  service_tokens = merge(
+    { (local.authentication_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" },
+    each.key == "studio" ? { (local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE) = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" } : {},
+  )
+  service_ca = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
+  resources  = { cpu = "100m", memory = "512Mi" }
 
   # Two keep the platform up through a lost pod or node. A third, on CPU, matches Authentication's
   # maximum, which every page calls.
@@ -58,7 +66,8 @@ module "platform_web" {
 }
 
 # The load balancer reaches each platform, which calls Authentication's API, reads JSON Keys' public
-# keys and reads the planned downtime document from GitHub (egress.tf).
+# keys and reads the planned downtime document from GitHub (egress.tf). Studio also calls
+# narrative-engine's API.
 resource "kubernetes_network_policy_v1" "platform_web" {
   for_each = local.platforms
 
@@ -92,7 +101,7 @@ resource "kubernetes_network_policy_v1" "platform_web" {
 
     egress {
       dynamic "to" {
-        for_each = ["authentication", "json-keys"]
+        for_each = concat(["authentication", "json-keys"], each.key == "studio" ? ["narrative-engine"] : [])
 
         content {
           namespace_selector {
@@ -213,6 +222,22 @@ resource "kubernetes_manifest" "platform_health_check" {
         }
       }
       targetRef = { group = "", kind = "Service", name = module.platform_web[each.key].service.name }
+    }
+  }
+}
+
+# Studio relays narrative-engine's streams, which last up to 5 minutes. Google's load balancer times
+# a whole response, 30 seconds by default, so Studio's backend allows 6 minutes.
+resource "kubernetes_manifest" "studio_backend_policy" {
+  count = var.custom_resources ? 1 : 0
+
+  manifest = {
+    apiVersion = "networking.gke.io/v1"
+    kind       = "GCPBackendPolicy"
+    metadata   = { name = "web", namespace = kubernetes_namespace_v1.service["studio"].metadata[0].name }
+    spec = {
+      default   = { timeoutSec = 360 }
+      targetRef = { group = "", kind = "Service", name = module.platform_web["studio"].service.name }
     }
   }
 }
