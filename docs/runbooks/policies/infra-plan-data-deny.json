@@ -2,11 +2,10 @@
   "displayName": "The plan identity reads no logs or traces",
   "rules": [
     {
-      "description": "Pull requests can mint infra-plan and infra-narrow-plan. Their roles would otherwise read what users write to logs and traces.",
+      "description": "Pull requests can mint infra-plan. Its logging role would otherwise read what users write to logs, and the rule keeps traces out of reach too.",
       "denyRule": {
         "deniedPrincipals": [
-          "principal://iam.googleapis.com/projects/-/serviceAccounts/infra-plan@a-novel-management-prod.iam.gserviceaccount.com",
-          "principal://iam.googleapis.com/projects/-/serviceAccounts/infra-narrow-plan@a-novel-management-prod.iam.gserviceaccount.com"
+          "principal://iam.googleapis.com/projects/-/serviceAccounts/infra-plan@a-novel-management-prod.iam.gserviceaccount.com"
         ],
         "deniedPermissions": [
           "logging.googleapis.com/logEntries.list",
