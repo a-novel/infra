@@ -11,6 +11,7 @@ namespaces = [
   "genai",
   "json-keys",
   "narrative-engine",
+  "profile",
   "studio",
 ]
 
@@ -54,12 +55,14 @@ grafana_cloud = {
 # of its request for 15 minutes: raise it then. Each database held about 0.1 GiB on 2026-10-29,
 # so the volumes start small and grow in place; the room above the data also absorbs WAL while
 # archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB. Narrative-engine starts empty,
-# and caps each project at 16 MiB.
+# and caps each project at 16 MiB. Profile starts empty too, and a picture weighs about 40 KB: ten
+# thousand pictures fill 0.4 GB.
 databases = {
   authentication   = { cpu = "100m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
   genai            = { cpu = "100m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
   json-keys        = { cpu = "100m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
   narrative-engine = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  profile          = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
 # Each service's ceiling, so one service cannot take the room another needs: its workloads at their
@@ -71,7 +74,8 @@ service_budgets = {
   authentication   = { cpu = "3", memory = "8Gi", pods = 20 }
   genai            = { cpu = "4", memory = "28Gi", pods = 20 }
   json-keys        = { cpu = "3", memory = "8Gi", pods = 20 }
-  narrative-engine = { cpu = "3", memory = "6Gi", pods = 10 }
+  narrative-engine = { cpu = "2", memory = "6Gi", pods = 10 }
+  profile          = { cpu = "1", memory = "6Gi", pods = 10 }
   studio           = { cpu = "1", memory = "3Gi", pods = 10 }
 }
 

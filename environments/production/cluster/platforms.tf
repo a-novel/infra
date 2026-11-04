@@ -16,14 +16,24 @@ locals {
   faro_collectors = data.terraform_remote_state.grafana.outputs.faro_collectors
   # Each platform's own settings, on top of those every platform takes.
   platforms = {
-    # The app list opens Studio.
-    account = { STUDIO_URL = "https://${local.platform_edges.studio.host}" }
+    # The app list opens Studio, and the account page shows and edits the visitor's profile.
+    account = {
+      STUDIO_URL          = "https://${local.platform_edges.studio.host}"
+      PROFILE_SERVICE_URL = "https://rest.profile.svc:${local.service_port}"
+    }
     # The account name opens the account platform. Studio also calls narrative-engine for the
     # Scenes Composer (a-novel/.github#565).
     studio = {
       ACCOUNT_URL                  = "https://${local.platform_edges.account.host}"
       NARRATIVE_ENGINE_SERVICE_URL = "https://rest.narrative-engine.svc:${local.service_port}"
     }
+  }
+  # The service APIs each platform calls, by namespace, with the variable that names the file of the
+  # token it sends each. A service's namespace is also its token's audience. JSON Keys' public keys
+  # take no token.
+  platform_services = {
+    account = { authentication = "SERVICE_TOKEN_PATH", json-keys = null, profile = "PROFILE_SERVICE_TOKEN_PATH" }
+    studio  = { authentication = "SERVICE_TOKEN_PATH", json-keys = null, narrative-engine = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" }
   }
   # A platform takes each request's origin from its Host header, over https: only the HTTPS
   # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
@@ -65,22 +75,17 @@ module "platform_web" {
   port             = local.platform_port
   http_health_path = "/ping"
   env              = local.platform_env[each.key]
-  # Each service a platform calls gets a token for its own audience.
-  service_tokens = merge(
-    { (local.authentication_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" },
-    each.key == "studio" ? { (local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE) = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" } : {},
-  )
-  service_ca = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
-  resources  = { cpu = "100m", memory = "512Mi" }
+  service_tokens   = { for service, variable in local.platform_services[each.key] : service => variable if variable != null }
+  service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
+  resources        = { cpu = "100m", memory = "512Mi" }
 
   # Two keep the platform up through a lost pod or node. A third, on CPU, matches Authentication's
   # maximum, which every page calls.
   replicas = { min = 2, max = 3 }
 }
 
-# The load balancer reaches each platform, which calls Authentication's API, reads JSON Keys' public
-# keys and reads the planned downtime document from GitHub (egress.tf). Studio also calls
-# narrative-engine's API.
+# The load balancer reaches each platform, which calls its services' APIs and reads the planned
+# downtime document from GitHub (egress.tf).
 resource "kubernetes_network_policy_v1" "platform_web" {
   for_each = local.platforms
 
@@ -114,7 +119,7 @@ resource "kubernetes_network_policy_v1" "platform_web" {
 
     egress {
       dynamic "to" {
-        for_each = concat(["authentication", "json-keys"], each.key == "studio" ? ["narrative-engine"] : [])
+        for_each = keys(local.platform_services[each.key])
 
         content {
           namespace_selector {

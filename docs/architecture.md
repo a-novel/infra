@@ -156,12 +156,12 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   `maintenance` CronJob holds the template of Authentication's maintenance Jobs, which the
   [setup runbook](runbooks/setup.md) runs.
 - **Health checks:** the shared health check, `modules/smoke-check/smoke.sh`, calls JSON Keys' and
-  GenAI's `Status` RPC, Authentication's `/v2/healthcheck` and narrative-engine's `/v1/healthcheck`,
-  as the namespace's `smoke` identity with a service token for the service's audience. It also calls
-  the `/v2/healthcheck` of JSON Keys' public REST API, which takes no token. A `smoke-<hash>` Job
-  runs it on each new image, script or setting, and the deploy waits on it. Each namespace's
-  `health` CronJob runs it every five minutes, and JSON Keys' `health-rest` its public API's, so a
-  failing service shows as failed Jobs. Both skip a planned downtime.
+  GenAI's `Status` RPC, Authentication's `/v2/healthcheck`, and narrative-engine's and profile's
+  `/v1/healthcheck`, as the namespace's `smoke` identity with a service token for the service's
+  audience. It also calls the `/v2/healthcheck` of JSON Keys' public REST API, which takes no
+  token. A `smoke-<hash>` Job runs it on each new image, script or setting, and the deploy waits on
+  it. Each namespace's `health` CronJob runs it every five minutes, and JSON Keys' `health-rest` its
+  public API's, so a failing service shows as failed Jobs. Both skip a planned downtime.
 - **OpenAI call:** the `provider-check-<revision>` Job submits one small generation to GenAI, as
   its `smoke` identity, and polls it until it settles. It runs once for each new value of the
   cluster root's `genai_provider_check`, the deploy waits on it, and it fails unless the generation
@@ -178,14 +178,15 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 | Authentication   | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
 | GenAI            | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
 | Narrative engine | `rest`: 2 to 3 pods, which Studio calls for its writers                                                         | `migrations`, `smoke`, `health`                                                                   |
+| Profile          | `rest`: 2 to 3 pods, which the account platform calls                                                           | `migrations`, `smoke`, `health`                                                                   |
 | Studio           | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 | Account          | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
-named callers: JSON Keys admits Authentication's and narrative-engine's APIs, GenAI admits
-narrative-engine's, Authentication admits the platforms, narrative-engine admits Studio, and each
-admits its own `smoke` identity. JSON Keys' public REST API takes no token: only its network policy
+named callers: JSON Keys admits the Authentication, narrative-engine and profile APIs, GenAI admits
+narrative-engine's, Authentication admits the platforms, narrative-engine admits Studio, profile
+admits the account platform, and each admits its own `smoke` identity. JSON Keys' public REST API takes no token: only its network policy
 limits it to the platforms and its `smoke` identity. Authentication trusts the visitor address the
 platforms forward, and narrative-engine the one Studio forwards, since only they call them on a
 visitor's behalf.
@@ -218,6 +219,7 @@ and a replica on separate nodes. The cluster root's `databases` sizes each one:
 | Authentication   | 0.1 vCPU    | 1536 MiB | 30 GiB | 50          |
 | GenAI            | 0.1 vCPU    | 6 GiB    | 20 GiB | 150         |
 | Narrative engine | 0.1 vCPU    | 1 GiB    | 10 GiB | 50          |
+| Profile          | 0.1 vCPU    | 1 GiB    | 10 GiB | 50          |
 
 Each database's connections, less PostgreSQL's 3 superuser slots, hold every workload's pool at its
 maximum pods plus a rollout's surge pod, every job's pool, the grants Job and the metrics exporter
