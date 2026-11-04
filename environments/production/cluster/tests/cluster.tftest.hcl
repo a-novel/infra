@@ -985,10 +985,10 @@ run "serves_each_platform_through_its_gateway" {
       one(one(route.manifest.spec.rules).backendRefs) == module.platform_web[platform].service &&
       [for filter in one(route.manifest.spec.rules).filters : one(filter.responseHeaderModifier.set).name if filter.type == "ResponseHeaderModifier"] == ["Strict-Transport-Security"] &&
       one(kubernetes_manifest.platform_redirect[platform].manifest.spec.parentRefs).sectionName == "http" &&
-      one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect == { scheme = "https", statusCode = 308 } &&
+      one(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules).filters).requestRedirect == { scheme = "https", statusCode = 301 } &&
       length(keys(one(kubernetes_manifest.platform_redirect[platform].manifest.spec.rules))) == 1
     ])
-    error_message = "HTTPS must reach each platform's Service with HSTS, and plain HTTP must only redirect to HTTPS, keeping the method."
+    error_message = "HTTPS must reach each platform's Service with HSTS, and plain HTTP must only redirect to HTTPS, with a code GKE accepts."
   }
 
   assert {
