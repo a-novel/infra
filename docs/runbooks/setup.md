@@ -91,7 +91,17 @@ gcloud iam policies create plan-identity-data --kind=denypolicies \
   --policy-file=docs/runbooks/policies/infra-plan-data-deny.json
 ```
 
-After a change to the file, run `gcloud iam policies update` with the same arguments.
+After a change to the file, update it from an infra checkout on `master`. The update requires the
+policy's current etag, which the file does not hold:
+
+```bash
+gcloud iam policies update plan-identity-data --kind=denypolicies \
+  --attachment-point="cloudresourcemanager.googleapis.com/organizations/1031663934757" \
+  --policy-file=docs/runbooks/policies/infra-plan-data-deny.json \
+  --etag="$(gcloud iam policies get plan-identity-data --kind=denypolicies \
+    --attachment-point="cloudresourcemanager.googleapis.com/organizations/1031663934757" \
+    --format='value(etag)')"
+```
 
 Creating the access policy and granting on it needs Access Context Manager Admin on the
 organization. Foundation's `access_policy_id` holds the number the list prints:
