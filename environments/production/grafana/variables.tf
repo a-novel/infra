@@ -24,11 +24,23 @@ variable "stack_id" {
 }
 
 variable "token_versions" {
-  description = "Numeric versions of the Grafana token secrets, by CI identity."
+  description = "Numeric versions of the Grafana token secrets, by CI identity: the stack's tokens, then the Grafana Cloud tokens of Frontend Observability."
   type = object({
-    plan   = number
-    deploy = number
+    plan         = number
+    deploy       = number
+    cloud_plan   = number
+    cloud_deploy = number
   })
+}
+
+variable "faro_apps" {
+  description = "The origin of each platform that reports browser telemetry to Faro, by repository. Foundation's platform_hosts names the same hosts."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for origin in values(var.faro_apps) : can(regex("^https://[a-z0-9.-]+$", origin))])
+    error_message = "An origin is https://<host>, without a path or a trailing slash."
+  }
 }
 
 variable "writer" {

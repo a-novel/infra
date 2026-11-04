@@ -5,8 +5,16 @@ url      = "https://anovel.grafana.net"
 stack_id = 1896612
 
 token_versions = {
-  plan   = 2
-  deploy = 1
+  plan         = 2
+  deploy       = 1
+  cloud_plan   = 1
+  cloud_deploy = 1
+}
+
+# The platforms that report to Faro, at the hosts foundation's platform_hosts gives them.
+faro_apps = {
+  "platform-account" = "https://account.storyverse.fr"
+  "platform-studio"  = "https://studio.storyverse.fr"
 }
 
 contact_point = "discord"
