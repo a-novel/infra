@@ -167,9 +167,10 @@ realm, then a token without an expiry:
 | `production-grafana-cloud-plan-token`   | none           | `stacks:read`, `frontend-observability:read`                                                                  |
 | `production-grafana-cloud-deploy-token` | `infra-deploy` | `stacks:read`, `frontend-observability:read`, `frontend-observability:write`, `frontend-observability:delete` |
 
-Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret). No plan reads
-the plan token, since the Grafana root holds no Frontend Observability resource yet, and deploys
-read the deploy token as `infra-grafana`. For a leak, delete the token in the Cloud Portal as well as disabling its version.
+Add each token as a version of its secret, as in [Rotate a secret](#rotate-a-secret), and pin it in
+the Grafana root's `token_versions`. Pull requests and the drift check read the plan token as
+`infra-reviewed-plan`, and deploys the deploy token as `infra-grafana`. For a leak, delete the token
+in the Cloud Portal as well as disabling its version.
 
 ## GitHub root keys
 

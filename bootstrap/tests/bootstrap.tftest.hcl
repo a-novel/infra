@@ -250,7 +250,7 @@ run "keeps_third_party_credentials_from_unreviewed_plans" {
 
   assert {
     condition = (
-      toset([for member in values(google_secret_manager_secret_iam_member.reviewed_plan) : member.secret_id]) == toset(["production-grafana-plan-token", "production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
+      toset([for member in values(google_secret_manager_secret_iam_member.reviewed_plan) : member.secret_id]) == toset(["production-grafana-plan-token", "production-grafana-cloud-plan-token", "production-github-plan-key-a-novel", "production-github-plan-key-a-novel-kit"]) &&
       alltrue([for member in values(google_secret_manager_secret_iam_member.reviewed_plan) : member.member == google_service_account.automation["reviewed_plan"].member])
     )
     error_message = "Only the reviewed plan identity reads the Grafana plan token and the Plan App keys."
