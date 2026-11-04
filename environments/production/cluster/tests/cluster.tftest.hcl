@@ -353,6 +353,11 @@ run "keeps_each_database_available_and_backed_up" {
   }
 
   assert {
+    condition     = alltrue([for database in kubernetes_manifest.database : database.manifest.spec.postgresql.pg_hba == ["hostnossl all all all reject"]])
+    error_message = "Each database must refuse every connection without TLS."
+  }
+
+  assert {
     condition     = time_sleep.database_lineage.create_duration == "4m" && time_sleep.database_lineage.triggers.lineage == var.backup_server_name
     error_message = "A new lineage must wait four minutes before its databases replace the old ones."
   }

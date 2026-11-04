@@ -383,7 +383,10 @@ resource "kubernetes_manifest" "database" {
         # would need a password.
         postgresql = {
           # Our CA signs every database's replication certificate, so each accepts only its own.
-          pg_ident                 = ["cnpg_streaming_replica ${local.database_replication_names[each.key]} streaming_replica"]
+          pg_ident = ["cnpg_streaming_replica ${local.database_replication_names[each.key]} streaming_replica"]
+          # Refuse every connection without TLS. CloudNativePG's own rules, local and certificate
+          # replication, come first, and its default password rule last.
+          pg_hba                   = ["hostnossl all all all reject"]
           shared_preload_libraries = contains(each.value.extensions, "pg_cron") ? ["pg_cron"] : []
           parameters = merge(
             { max_connections = tostring(each.value.max_connections) },
