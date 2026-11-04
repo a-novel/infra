@@ -188,8 +188,9 @@ resource "kubernetes_manifest" "platform_route" {
   }
 }
 
-# Plain HTTP only redirects to HTTPS, with 308 to keep the method (RFC 9110 section 15.4.9). Gateway
-# API accepts 308 from its v1.5.0 CRDs, which GKE installs from 1.35.2-gke.1842000.
+# Plain HTTP only redirects to HTTPS, with 301. GKE's Gateway controller refuses 308 (GWCER104) though
+# the Gateway API CRDs accept it, and one refused route stops the whole Gateway from updating. HSTS
+# keeps browsers off plain HTTP after their first visit.
 resource "kubernetes_manifest" "platform_redirect" {
   for_each = var.custom_resources ? local.platforms : {}
 
@@ -200,7 +201,7 @@ resource "kubernetes_manifest" "platform_redirect" {
     spec = {
       parentRefs = [{ name = kubernetes_manifest.platform_gateway[each.key].manifest.metadata.name, sectionName = "http" }]
       hostnames  = [local.platform_edges[each.key].host]
-      rules      = [{ filters = [{ type = "RequestRedirect", requestRedirect = { scheme = "https", statusCode = 308 } }] }]
+      rules      = [{ filters = [{ type = "RequestRedirect", requestRedirect = { scheme = "https", statusCode = 301 } }] }]
     }
   }
 }
