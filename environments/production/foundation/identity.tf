@@ -2,6 +2,33 @@ locals {
   automation_service_accounts = {
     foundation = "infra-foundation@${var.management_project_id}.iam.gserviceaccount.com"
     plan       = "infra-plan@${var.management_project_id}.iam.gserviceaccount.com"
+    # Temporary, until infra-plan holds plan_project_roles alone (bootstrap's narrow-plan.tf).
+    narrow_plan = "infra-narrow-plan@${var.management_project_id}.iam.gserviceaccount.com"
+  }
+
+  # What the plan identities read here: the configuration of every resource foundation manages, and
+  # every object in the cluster but Secrets. The logging role reads the log buckets' settings, and
+  # the deny policy refuses its log entries. Viewer, which infra-plan still holds, also reads the
+  # pods' logs, which no deny policy can refuse, so these roles replace it once infra-narrow-plan
+  # proves them.
+  plan_project_roles = toset([
+    "roles/artifactregistry.viewer",
+    "roles/certificatemanager.viewer",
+    "roles/cloudquotas.viewer",
+    "roles/compute.viewer",
+    "roles/container.viewer",
+    "roles/dns.reader",
+    "roles/iam.roleViewer",
+    "roles/iam.serviceAccountViewer",
+    "roles/logging.viewer",
+    "roles/monitoring.notificationChannelViewer",
+    "roles/networksecurity.viewer",
+    "roles/serviceusage.serviceUsageViewer",
+  ])
+
+  plan_project_bindings = {
+    for binding in setproduct(["plan", "narrow_plan"], local.plan_project_roles) :
+    "${binding[0]}:${binding[1]}" => { account = binding[0], role = binding[1] }
   }
 
   runtime_identities = {
@@ -91,11 +118,18 @@ resource "google_project_iam_member" "plan_viewer" {
   member  = "serviceAccount:${local.automation_service_accounts.plan}"
 }
 
-# The plan identity reads the cluster's objects through its DNS endpoint, but never its Secrets.
-resource "google_project_iam_member" "plan_cluster_viewer" {
+# The plan identities reach the cluster through its DNS endpoint.
+resource "google_project_iam_member" "plan" {
+  for_each = local.plan_project_bindings
+
   project = google_project.workload.project_id
-  role    = "roles/container.viewer"
-  member  = "serviceAccount:${local.automation_service_accounts.plan}"
+  role    = each.value.role
+  member  = "serviceAccount:${local.automation_service_accounts[each.value.account]}"
+}
+
+moved {
+  from = google_project_iam_member.plan_cluster_viewer
+  to   = google_project_iam_member.plan["plan:roles/container.viewer"]
 }
 
 # Managed instance groups, the cluster's node pools included, act through Google's project service
