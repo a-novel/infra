@@ -5,9 +5,6 @@ locals {
   genai_secret_env = merge(local.database_secret_env, { OPENAI_API_KEY = { secret = "secrets", key = "OPENAI_API_KEY" } })
 
   genai_grpc_env = merge(local.genai_env, local.telemetry_env["genai"].api, {
-    # Polls stop reaching the provider more than once per interval, which also bounds the reads in
-    # flight while the provider is slow.
-    CHECK_INTERVAL = "10s"
     # 20 concurrent maximum-size submits peak at 1,575 MiB under this limit, and the server refuses
     # a call beyond them.
     GOMEMLIMIT                = "1600MiB"
@@ -22,7 +19,8 @@ locals {
   })
 
   genai_sweep_env = merge(local.genai_env, local.telemetry_env["genai"].job, {
-    # A sweep starts pending generations, which reads their payloads: 4 checks fit 1 GiB.
+    # A sweep only reads generations it checks, never their payloads, and keeps one of its 4
+    # connections for its leader lock: 3 checks fit 1 GiB.
     GOMEMLIMIT              = "800MiB"
     POSTGRES_MAX_OPEN_CONNS = "4"
     POSTGRES_MAX_IDLE_CONNS = "4"
@@ -79,8 +77,8 @@ module "genai_sweep" {
   labels           = local.database_clients
   pod_annotations  = local.database_client_annotations
 
-  # Concurrent sweeps take disjoint batches, so two keep the sweep running through a lost pod or
-  # node, and a third, on CPU, drains a backlog.
+  # One replica sweeps at a time, under a leader lock. A second stands by and takes the lock when the
+  # leader's pod or node is lost.
   replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
