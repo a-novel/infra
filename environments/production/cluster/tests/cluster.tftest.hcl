@@ -913,18 +913,25 @@ run "runs_profile" {
   assert {
     condition = (
       length(one(kubernetes_network_policy_v1.profile_rest.spec).ingress) == 1 &&
-      [for peer in one(one(kubernetes_network_policy_v1.profile_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "profile")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["account:web", "profile:smoke"] &&
-      toset(split(",", local.profile_env.SERVICE_TOKEN_CALLERS)) == toset([module.platform_web["account"].service_account, "system:serviceaccount:profile:smoke"]) &&
+      toset([for peer in one(one(kubernetes_network_policy_v1.profile_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "profile")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"]) == toset(concat([for platform in keys(local.platforms) : "${platform}:web"], ["profile:smoke"])) &&
+      toset(split(",", local.profile_env.SERVICE_TOKEN_CALLERS)) == toset(concat([for workload in values(module.platform_web) : workload.service_account], ["system:serviceaccount:profile:smoke"])) &&
       local.profile_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
-      [for platform, services in local.platform_services : platform if contains(keys(services), "profile")] == ["account"] &&
-      one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames) == "${module.profile_rest[0].service.name}.profile.svc" &&
-      local.platform_env.account.PROFILE_SERVICE_URL == "https://${one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames)}:${local.profile_env.REST_PORT}" &&
-      contains([for peer in one(one(kubernetes_network_policy_v1.platform_web["account"].spec).egress).to :
+      one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames) == "${module.profile_rest[0].service.name}.profile.svc"
+    )
+    error_message = "Only the platforms and the smoke check may call profile's API, over TLS at the name its certificate carries, and profile must trust the visitor IP the platforms forward."
+  }
+
+  # Every platform shows the visitor's own profile, so the platforms list alone grants the calls.
+  assert {
+    condition = alltrue([for platform, env in local.platform_env :
+      env.PROFILE_SERVICE_URL == "https://${one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames)}:${local.profile_env.REST_PORT}" &&
+      lookup(local.platform_services[platform], "profile", null) != null &&
+      contains([for peer in one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).to :
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
       ], "profile/${module.profile_rest[0].pod_labels["app.kubernetes.io/name"]}") &&
-      contains([for port in one(one(kubernetes_network_policy_v1.platform_web["account"].spec).egress).ports : port.port], local.profile_env.REST_PORT)
-    )
-    error_message = "Only the account platform and the smoke check may call profile's API, over TLS at the name its certificate carries, the account platform must reach it, and profile must trust the visitor IP it forwards."
+      contains([for port in one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).ports : port.port], local.profile_env.REST_PORT)
+    ])
+    error_message = "Every platform must call profile's API by the name its certificate carries, with a service token, through a policy that lets it reach the API."
   }
 }
 
@@ -938,10 +945,11 @@ run "runs_each_platform" {
   assert {
     condition = alltrue([for platform, env in local.platform_env :
       env.PUBLIC_FARO_URL == data.terraform_remote_state.grafana.outputs.faro_collectors["platform-${platform}"] &&
+      env.PUBLIC_CONSENT_DOMAIN == "storyverse.fr" &&
       env.ADDRESS_HEADER == "X-Forwarded-For" &&
       env.XFF_DEPTH == "2"
     ])
-    error_message = "Each platform must report to its own Faro app and take the visitor's address the load balancer appends."
+    error_message = "Each platform must report to its own Faro app, keep the visitor's consent on the domain every platform's host shares, and take the visitor's address the load balancer appends."
   }
 
   assert {

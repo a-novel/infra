@@ -1,5 +1,5 @@
-# The profile service's REST API, which stores each user's username and picture. The account
-# platform calls it server-side for its visitors, whose access tokens it verifies against JSON Keys.
+# The profile service's REST API, which stores each user's username and picture. Every platform
+# calls it server-side for its visitors, whose access tokens it verifies against JSON Keys.
 locals {
   profile_env = merge(local.database_env["profile"], local.downtime_env["profile"], local.telemetry_env["profile"].api, {
     GOMEMLIMIT              = "400MiB"
@@ -11,9 +11,9 @@ locals {
     SERVICE_JSON_KEYS_TLS   = "true"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "profile"
-    SERVICE_TOKEN_CALLERS   = "${local.platform_callers.account},system:serviceaccount:profile:smoke"
-    # Only the account platform calls the API for its visitors, so it can trust the visitor IP the
-    # platform forwards. Without it, every visitor would share the platform's rate limit.
+    SERVICE_TOKEN_CALLERS   = join(",", concat(values(local.platform_callers), ["system:serviceaccount:profile:smoke"]))
+    # Only the platforms call the API for their visitors, so it can trust the visitor IP they
+    # forward. Without it, every visitor would share their platform's rate limit.
     REST_CLIENT_IP_HEADER = "X-Client-IP"
   })
 }
@@ -37,15 +37,15 @@ module "profile_rest" {
   labels           = local.database_clients
   pod_annotations  = local.database_client_annotations
 
-  # Two keep profiles up through a lost pod or node. A third, on CPU, follows the account platform's
-  # third, which calls it.
+  # Two keep profiles up through a lost pod or node. A third, on CPU, follows the platforms' third,
+  # since every platform calls it.
   replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations]
 }
 
-# The account platform and the smoke check call the API, which calls JSON Keys, and reaches the
-# issuer's keys through Google's restricted API addresses.
+# The platforms and the smoke check call the API, which calls JSON Keys, and reaches the issuer's
+# keys through Google's restricted API addresses.
 resource "kubernetes_network_policy_v1" "profile_rest" {
   metadata {
     name      = "rest"
@@ -59,12 +59,16 @@ resource "kubernetes_network_policy_v1" "profile_rest" {
     policy_types = ["Ingress", "Egress"]
 
     ingress {
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "account" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "web" }
+      dynamic "from" {
+        for_each = local.platforms
+
+        content {
+          namespace_selector {
+            match_labels = { "kubernetes.io/metadata.name" = from.key }
+          }
+          pod_selector {
+            match_labels = { "app.kubernetes.io/name" = "web" }
+          }
         }
       }
       from {
