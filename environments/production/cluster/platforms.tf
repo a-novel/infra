@@ -52,8 +52,11 @@ locals {
     XFF_DEPTH      = "2"
     # The browser reports to the platform's Faro app once the visitor consents.
     PUBLIC_FARO_URL = local.faro_collectors["platform-${platform}"]
-    # The consent cookie lives on the shared parent domain, so one answer covers every Agora app.
-    PUBLIC_CONSENT_DOMAIN = local.platform_domain
+    # The visitor's shared choices live in cookies on the parent domain, so one answer covers every
+    # Agora app. PUBLIC_CONSENT_DOMAIN is its former name, which images released before the rename
+    # still read.
+    PUBLIC_PLATFORM_DOMAIN = local.platform_domain
+    PUBLIC_CONSENT_DOMAIN  = local.platform_domain
   }, settings) }
   # The headers the load balancer sets on a platform's requests, over any value the browser sent. The
   # account platform forwards the visitor's estimated place to Authentication, which records where a
