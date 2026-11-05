@@ -178,23 +178,25 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 | Authentication   | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
 | GenAI            | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
 | Narrative engine | `rest`: 2 to 3 pods, which Studio calls for its writers                                                         | `migrations`, `smoke`, `health`                                                                   |
-| Profile          | `rest`: 2 to 3 pods, which the account platform calls                                                           | `migrations`, `smoke`, `health`                                                                   |
+| Profile          | `rest`: 2 to 3 pods, which every platform calls                                                                 | `migrations`, `smoke`, `health`                                                                   |
 | Studio           | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 | Account          | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
 named callers: JSON Keys admits the Authentication, narrative-engine and profile APIs, GenAI admits
-narrative-engine's, Authentication admits the platforms, narrative-engine admits Studio, profile
-admits the account platform, and each admits its own `smoke` identity. JSON Keys' public REST API takes no token: only its network policy
-limits it to the platforms and its `smoke` identity. Authentication trusts the visitor address the
-platforms forward, and narrative-engine the one Studio forwards, since only they call them on a
-visitor's behalf.
+narrative-engine's, Authentication and profile admit the platforms, narrative-engine admits Studio,
+and each admits its own `smoke` identity. JSON Keys' public REST API takes no token: only its
+network policy limits it to the platforms and its `smoke` identity. Authentication and profile trust
+the visitor address the platforms forward, and narrative-engine the one Studio forwards, since only
+they call them on a visitor's behalf.
 
 People sign in on the account platform alone. Every other platform is one of Authentication's OAuth
 clients: the account platform sends each sign-in back to `/auth/callback` on the platform's own
 host, and the platform exchanges the code as its `web` identity. The cluster root registers each
-platform it runs, so a new platform becomes a client by joining that list.
+platform it runs, so a new platform becomes a client by joining that list. Joining it also lets the
+platform call Authentication, JSON Keys' public keys and profile, and gives it the settings every
+platform shares, such as the parent domain that keeps the visitor's telemetry consent.
 
 Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
 `terraform.tfvars`, its database image included, and the cluster root reads those pins. Every plan

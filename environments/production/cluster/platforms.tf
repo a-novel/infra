@@ -14,12 +14,14 @@ data "terraform_remote_state" "grafana" {
 locals {
   platform_edges  = data.terraform_remote_state.foundation.outputs.platform_edges
   faro_collectors = data.terraform_remote_state.grafana.outputs.faro_collectors
-  # Each platform's own settings, on top of those every platform takes.
+  # The parent domain every platform's host shares. one() fails the plan once a host leaves it.
+  platform_domain = one(distinct([for edge in values(local.platform_edges) : regex("^[^.]+\\.(.+)$", edge.host)[0]]))
+  # Each platform's own settings, on top of those every platform takes. Joining this list grants a
+  # platform every shared setting and service, profile included.
   platforms = {
-    # The app list opens Studio, and the account page shows and edits the visitor's profile.
+    # The app list opens Studio.
     account = {
-      STUDIO_URL          = "https://${local.platform_edges.studio.host}"
-      PROFILE_SERVICE_URL = "https://rest.profile.svc:${local.service_port}"
+      STUDIO_URL = "https://${local.platform_edges.studio.host}"
     }
     # The account name opens the account platform. Studio also calls narrative-engine for the
     # Scenes Composer (a-novel/.github#565).
@@ -29,17 +31,20 @@ locals {
     }
   }
   # The service APIs each platform calls, by namespace, with the variable that names the file of the
-  # token it sends each. A service's namespace is also its token's audience. JSON Keys' public keys
-  # take no token.
-  platform_services = {
-    account = { authentication = "SERVICE_TOKEN_PATH", json-keys = null, profile = "PROFILE_SERVICE_TOKEN_PATH" }
-    studio  = { authentication = "SERVICE_TOKEN_PATH", json-keys = null, narrative-engine = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" }
-  }
+  # token it sends each. A service's namespace is also its token's audience. Every platform calls
+  # Authentication, JSON Keys' public keys, which take no token, and profile; Studio also calls
+  # narrative-engine.
+  platform_services = { for platform in keys(local.platforms) : platform => merge(
+    { authentication = "SERVICE_TOKEN_PATH", json-keys = null, profile = "PROFILE_SERVICE_TOKEN_PATH" },
+    lookup({ studio = { narrative-engine = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" } }, platform, {}),
+  ) }
   # A platform takes each request's origin from its Host header, over https: only the HTTPS
   # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
     AUTHENTICATION_SERVICE_URL = "https://rest.authentication.svc:${local.authentication_env.REST_PORT}"
     JSON_KEYS_SERVICE_URL      = "https://rest.json-keys.svc:${local.json_keys_rest_env.REST_PORT}"
+    # Every platform shows the visitor's own profile, and the account page edits it.
+    PROFILE_SERVICE_URL = "https://rest.profile.svc:${local.profile_env.REST_PORT}"
     # The load balancer appends the visitor's address, then its own, so the second entry from the
     # right is the only one a visitor cannot forge. Authentication rate-limits by the address the
     # platform forwards.
@@ -47,6 +52,8 @@ locals {
     XFF_DEPTH      = "2"
     # The browser reports to the platform's Faro app once the visitor consents.
     PUBLIC_FARO_URL = local.faro_collectors["platform-${platform}"]
+    # The consent cookie lives on the shared parent domain, so one answer covers every Agora app.
+    PUBLIC_CONSENT_DOMAIN = local.platform_domain
   }, settings) }
   # The headers the load balancer sets on a platform's requests, over any value the browser sent. The
   # account platform forwards the visitor's estimated place to Authentication, which records where a

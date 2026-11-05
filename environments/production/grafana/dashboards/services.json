@@ -3496,7 +3496,7 @@
       "spec": {
         "id": 24,
         "title": "Refusals from the services",
-        "description": "Each hour's calls a service answered with an error status, by service and status: where a visitor's request met a limit or a fault.",
+        "description": "Each hour's calls a service answered with an error status, by service and status: where a visitor's request met a limit or a fault. Profile answers 404 for a visitor who has no profile yet, so its 404s alone are no worry.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
