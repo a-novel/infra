@@ -1,0 +1,26 @@
+name: Set up OpenTofu
+description: >
+  Install the OpenTofu version .opentofu-version names, without the wrapper. A failed download gets a
+  second attempt a minute later, which fails the job if it fails too.
+
+runs:
+  using: composite
+  steps:
+    # GitHub's release downloads answer 5xx for longer than setup-opentofu's own three attempts, which
+    # span about half a minute (a-novel/infra#1574's deploy).
+    - id: setup
+      continue-on-error: true
+      uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+      with:
+        tofu_version_file: .opentofu-version
+        tofu_wrapper: false
+
+    - if: steps.setup.outcome == 'failure'
+      shell: bash
+      run: sleep 60
+
+    - if: steps.setup.outcome == 'failure'
+      uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+      with:
+        tofu_version_file: .opentofu-version
+        tofu_wrapper: false
