@@ -81,6 +81,10 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 
 - **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
+- **A `DatasourceError`:** the rule's query failed for its whole pending period, a minute at least.
+  Several rules at once, with `received an unexpected error from the datasource`, point at Grafana
+  Cloud: read its [status page](https://status.grafana.com). One rule alone, such as with
+  `found duplicate series`, is a defect in its query: fix it in the Grafana root's `alerts.tf`.
 - **A failed or missed CronJob:** read its Jobs and their logs with `kubectl`, as
   [Ops basics](../ops-basics.md#identities) shows. A failed run is not retried, and the next one
   takes over. A failed `health` run is a failed [health check](#health-checks).

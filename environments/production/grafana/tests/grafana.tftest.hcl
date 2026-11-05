@@ -43,6 +43,11 @@ run "routes_every_alert_to_discord" {
     )]]))
     error_message = "Every rule must fire on any series its query returns, and stay quiet on none, as a Prometheus rule does."
   }
+
+  assert {
+    condition     = alltrue(flatten([for group in grafana_rule_group.alerts : [for rule in group.rule : rule.exec_err_state == "Error" && rule.for != "0s"]]))
+    error_message = "A failed query must post DatasourceError only once it outlasts a pending period, or a single failed evaluation pages."
+  }
 }
 
 run "watches_every_service" {
