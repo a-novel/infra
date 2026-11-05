@@ -225,6 +225,13 @@ run "alerts_before_grafana_bills_overage" {
     condition     = jsondecode(one([for rule in grafana_rule_group.alerts["platform"].rule : rule if rule.name == "Gateway refused"]).data[0].model).queryType == "instant"
     error_message = "The Gateway alert must ask Loki for an instant value: a rule cannot fire on the range Loki answers otherwise."
   }
+
+  assert {
+    condition = alltrue(flatten([for group in grafana_rule_group.alerts : [
+      for rule in group.rule : [for query in rule.data : query.query_type == lookup(jsondecode(query.model), "queryType", null)]
+    ]]))
+    error_message = "Grafana copies a query model's queryType onto the query, so query_type must repeat it, or every plan rewrites the rule group."
+  }
 }
 
 run "pins_the_cloudnative_pg_dashboard" {

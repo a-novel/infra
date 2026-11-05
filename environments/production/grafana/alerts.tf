@@ -422,6 +422,9 @@ resource "grafana_rule_group" "alerts" {
         ref_id         = "query"
         datasource_uid = lookup(rule.value, "datasource", local.metrics)
         # Loki answers a range unless queryType says instant, and a rule cannot fire on a range.
+        # Grafana copies the model's queryType onto the query, so query_type repeats it, or each plan
+        # rewrites the group.
+        query_type = lookup(rule.value, "datasource", local.metrics) == local.logs ? "instant" : null
         model = jsonencode(merge(
           { refId = "query", expr = rule.value.expr, instant = true },
           lookup(rule.value, "datasource", local.metrics) == local.logs ? { queryType = "instant" } : {},
