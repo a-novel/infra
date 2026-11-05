@@ -43,7 +43,7 @@ locals {
     },
     {
       title     = "${service}: faults"
-      for       = "0s"
+      for       = "1m"
       dashboard = "errors"
       panel     = 7
       summary   = "{{ index $labels \"span_name\" }}: {{ index $labels \"error_type\" }}, {{ humanize $values.query.Value }} in 10 minutes."
@@ -55,7 +55,7 @@ locals {
     },
     {
       title     = "${service}: new fault"
-      for       = "0s"
+      for       = "1m"
       dashboard = "errors"
       panel     = 7
       summary   = "It faulted with {{ index $labels \"error_type\" }}, which it had not faulted with for a week."
@@ -84,7 +84,7 @@ locals {
       title     = "Scheduled job missed"
       dashboard = "errors"
       panel     = 4
-      for       = "0s"
+      for       = "1m"
       summary   = "{{ $labels.namespace }}/{{ $labels.cronjob }} has not started the run due {{ humanizeDuration $values.query.Value }} ago."
       expr      = "time() - kube_cronjob_next_schedule_time > 600"
     },
@@ -203,7 +203,7 @@ locals {
     # Alloy is the only collector, so every scrape stops with it, its token or its egress.
     {
       title   = "Collector silent"
-      for     = "0s"
+      for     = "1m"
       summary = "Grafana received no scrape from Alloy for 10 minutes."
       expr    = "absent_over_time(up[10m])"
     },
@@ -212,7 +212,7 @@ locals {
     {
       title      = "Gateway refused"
       datasource = local.logs
-      for        = "0s"
+      for        = "1m"
       summary    = "GKE refuses the {{ $labels.k8s_namespace_name }} Gateway or one of its routes or policies, so its load balancer keeps its last good config."
       expr       = "sum by (k8s_namespace_name) (count_over_time({service_name=\"integrations/kubernetes/eventhandler\"} | level=\"Warning\" |= \"sourcecomponent=sc-gateway-controller\" [15m]))"
     },
@@ -251,7 +251,7 @@ locals {
   # The overage sums every allowance's cost beyond the plan, in US dollars.
   overage_rule = {
     title      = "Usage: overage"
-    for        = "0s"
+    for        = "1m"
     datasource = local.usage
     summary    = "This month's usage already costs {{ $values.query.Value }} USD beyond the plan."
     expr       = "sum(grafanacloud_org_total_overage) > 0"
@@ -283,7 +283,7 @@ locals {
       title     = "Container killed for memory"
       dashboard = "health"
       panel     = 3
-      for       = "0s"
+      for       = "1m"
       summary   = "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) restarted after running out of memory."
       expr      = "increase(kube_pod_container_status_restarts_total[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1"
     },
@@ -305,13 +305,14 @@ locals {
       summary   = "The {{ $labels.namespace }} service uses {{ humanizePercentage $values.query.Value }} of its {{ $labels.resource }} budget."
       expr      = "max by (namespace, resource) (kube_resourcequota{type=\"used\"}) / max by (namespace, resource) (kube_resourcequota{type=\"hard\"} > 0) > ${var.thresholds.service_budget}"
     },
+    # For about a minute after a restart, kube-state-metrics reports each autoscaler twice.
     {
       title     = "Workload autoscaler at its maximum"
       dashboard = "health"
       panel     = 14
       for       = "15m"
       summary   = "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} runs its most replicas."
-      expr      = "kube_horizontalpodautoscaler_status_current_replicas >= on (namespace, horizontalpodautoscaler) kube_horizontalpodautoscaler_spec_max_replicas"
+      expr      = "max by (namespace, horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_current_replicas) >= max by (namespace, horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_max_replicas)"
     },
     ], [for name, database in local.databases : {
       title     = "${name}: connections above ${format("%.0f", var.thresholds.database_connections * 100)}% of the limit"
@@ -378,7 +379,7 @@ locals {
     },
     {
       title     = "Counters evicted"
-      for       = "0s"
+      for       = "1m"
       dashboard = "services"
       panel     = 29
       summary   = "Authentication's counter store evicted {{ humanize $values.query.Value }} counters in the last hour, which loosened their limits."
@@ -411,7 +412,9 @@ resource "grafana_rule_group" "alerts" {
       for       = rule.value.for
       condition = "firing"
       # A query that returns nothing is healthy, as in a Prometheus rule.
-      no_data_state  = "OK"
+      no_data_state = "OK"
+      # A failed query posts DatasourceError once it lasts the rule's pending period. Grafana Cloud
+      # fails a single evaluation now and then, so every rule pends at least one minute.
       exec_err_state = "Error"
       annotations = merge(
         { summary = rule.value.summary, runbook_url = local.runbook },
