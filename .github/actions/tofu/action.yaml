@@ -69,10 +69,7 @@ runs:
           exit 1
         fi
 
-    - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
-      with:
-        tofu_version_file: .opentofu-version
-        tofu_wrapper: false
+    - uses: $/.github/actions/setup-tofu
 
     # Google's token service answers 503 now and then, and this action has no retry of its own: a
     # failed first attempt gets a second one, which fails the job if it fails too.
