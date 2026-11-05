@@ -76,7 +76,7 @@ One pull request runs it:
   - for a platform, instead, its entry in `platforms`, in `platforms.tf`. The list runs its `web`
     workload behind its Gateway, and grants it what every platform shares: the calls to
     Authentication, JSON Keys' public keys and profile, and the shared settings, such as
-    `PUBLIC_CONSENT_DOMAIN`;
+    `PUBLIC_PLATFORM_DOMAIN`;
   - its smoke and health checks, in `health_check_targets`;
   - in each service it calls, its API in `SERVICE_TOKEN_CALLERS` and in the network policy;
   - each internet host it reaches in `internet_egress`, for the pods that call it.

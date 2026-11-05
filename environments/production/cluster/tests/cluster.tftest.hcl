@@ -945,11 +945,11 @@ run "runs_each_platform" {
   assert {
     condition = alltrue([for platform, env in local.platform_env :
       env.PUBLIC_FARO_URL == data.terraform_remote_state.grafana.outputs.faro_collectors["platform-${platform}"] &&
-      env.PUBLIC_CONSENT_DOMAIN == "storyverse.fr" &&
+      env.PUBLIC_PLATFORM_DOMAIN == "storyverse.fr" &&
       env.ADDRESS_HEADER == "X-Forwarded-For" &&
       env.XFF_DEPTH == "2"
     ])
-    error_message = "Each platform must report to its own Faro app, keep the visitor's consent on the domain every platform's host shares, and take the visitor's address the load balancer appends."
+    error_message = "Each platform must report to its own Faro app, keep the visitor's shared choices on the domain every platform's host shares, and take the visitor's address the load balancer appends."
   }
 
   assert {
