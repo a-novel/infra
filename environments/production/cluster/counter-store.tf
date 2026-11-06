@@ -1,6 +1,7 @@
-# Authentication's rate-limit counter store (a-novel/.github#550): one Valkey instance, from the
-# official chart, that holds only httprate's counters. Each counter expires three windows after it
-# starts, so the store keeps nothing on disk, and a restart only resets the current windows.
+# The rate-limit counter store of each service in counter_stores (a-novel/.github#550): one Valkey
+# instance in the service's namespace, from the official chart, that holds only httprate's counters.
+# Each counter expires three windows after it starts, so the store keeps nothing on disk, and a
+# restart only resets the current windows. Every store runs these values, and serves one service.
 locals {
   # The chart's selector labels.
   counter_store_pods = { "app.kubernetes.io/name" = "valkey" }
@@ -64,12 +65,12 @@ locals {
 
 # Each ACL user's password, in letters and digits, which every client and URL takes as they are.
 resource "kubernetes_manifest" "counter_store_passwords" {
-  count = var.custom_resources ? 1 : 0
+  for_each = var.custom_resources ? var.counter_stores : toset([])
 
   manifest = {
     apiVersion = "generators.external-secrets.io/v1alpha1"
     kind       = "Password"
-    metadata   = { name = "valkey-users", namespace = local.namespace["authentication"] }
+    metadata   = { name = "valkey-users", namespace = local.namespace[each.key] }
     spec       = { length = 32, symbols = 0, noUpper = false, allowRepeat = true, secretKeys = ["exporter", "limiter"] }
   }
 }
@@ -77,19 +78,19 @@ resource "kubernetes_manifest" "counter_store_passwords" {
 # External Secrets generates the passwords once into the users' Secret, under each user's name, so
 # neither state nor a plan holds them.
 resource "kubernetes_manifest" "counter_store_users" {
-  count = var.custom_resources ? 1 : 0
+  for_each = var.custom_resources ? var.counter_stores : toset([])
 
   manifest = {
     apiVersion = "external-secrets.io/v1"
     kind       = "ExternalSecret"
-    metadata   = { name = "valkey-users", namespace = local.namespace["authentication"] }
+    metadata   = { name = "valkey-users", namespace = local.namespace[each.key] }
     spec = {
       refreshPolicy = "CreatedOnce"
       target        = { name = local.counter_store_values.auth.usersExistingSecret, creationPolicy = "Owner" }
       dataFrom = [{ sourceRef = { generatorRef = {
-        apiVersion = kubernetes_manifest.counter_store_passwords[0].manifest.apiVersion
-        kind       = kubernetes_manifest.counter_store_passwords[0].manifest.kind
-        name       = kubernetes_manifest.counter_store_passwords[0].manifest.metadata.name
+        apiVersion = kubernetes_manifest.counter_store_passwords[each.key].manifest.apiVersion
+        kind       = kubernetes_manifest.counter_store_passwords[each.key].manifest.kind
+        name       = kubernetes_manifest.counter_store_passwords[each.key].manifest.metadata.name
       } } }]
     }
   }
@@ -103,10 +104,10 @@ resource "kubernetes_manifest" "counter_store_users" {
 }
 
 resource "helm_release" "counter_store" {
-  count = var.custom_resources ? 1 : 0
+  for_each = var.custom_resources ? var.counter_stores : toset([])
 
   name       = "valkey"
-  namespace  = local.namespace["authentication"]
+  namespace  = local.namespace[each.key]
   repository = "https://valkey.io/valkey-helm/"
   chart      = "valkey"
   version    = "0.12.1"
@@ -117,12 +118,14 @@ resource "helm_release" "counter_store" {
   depends_on = [kubernetes_manifest.counter_store_users]
 }
 
-# Authentication's API pods reach the store, and Alloy its exporter. The store calls nothing, so its
-# policy opens no egress.
+# The service's API pods, its rest workload, reach its store, and Alloy the exporter. The store calls
+# nothing, so its policy opens no egress.
 resource "kubernetes_network_policy_v1" "counter_store" {
+  for_each = var.counter_stores
+
   metadata {
     name      = "valkey"
-    namespace = local.namespace["authentication"]
+    namespace = local.namespace[each.key]
   }
 
   spec {
@@ -134,7 +137,7 @@ resource "kubernetes_network_policy_v1" "counter_store" {
     ingress {
       from {
         pod_selector {
-          match_labels = kubernetes_network_policy_v1.authentication_rest.spec[0].pod_selector[0].match_labels
+          match_labels = { "app.kubernetes.io/name" = "rest" }
         }
       }
 
@@ -160,4 +163,25 @@ resource "kubernetes_network_policy_v1" "counter_store" {
       }
     }
   }
+}
+
+# Authentication's store, from when it was the only one.
+moved {
+  from = kubernetes_manifest.counter_store_passwords[0]
+  to   = kubernetes_manifest.counter_store_passwords["authentication"]
+}
+
+moved {
+  from = kubernetes_manifest.counter_store_users[0]
+  to   = kubernetes_manifest.counter_store_users["authentication"]
+}
+
+moved {
+  from = helm_release.counter_store[0]
+  to   = helm_release.counter_store["authentication"]
+}
+
+moved {
+  from = kubernetes_network_policy_v1.counter_store
+  to   = kubernetes_network_policy_v1.counter_store["authentication"]
 }

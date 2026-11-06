@@ -92,7 +92,7 @@ run "pulls_addons_through_our_registry" {
 
   assert {
     condition = alltrue([for registry in ["docker.io/", "ghcr.io/", "quay.io/", "registry.k8s.io/"] :
-      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.trust_manager.values, helm_release.alloy.values, helm_release.counter_store[0].values)), registry)
+      !strcontains(join("\n", concat(helm_release.external_secrets.values, helm_release.trust_manager.values, helm_release.alloy.values, flatten(values(helm_release.counter_store)[*].values))), registry)
     ])
     error_message = "No chart may keep an upstream registry reference."
   }
@@ -660,7 +660,7 @@ run "runs_authentication" {
   }
 }
 
-run "keeps_authentication_counters_in_a_locked_store" {
+run "keeps_each_services_counters_in_a_locked_store_of_its_own" {
   command = plan
 
   variables {
@@ -697,52 +697,61 @@ run "keeps_authentication_counters_in_a_locked_store" {
     error_message = "The limiter may run only httprate's commands on its own keys, the exporter only read statistics and no key, and the default user nothing."
   }
 
-  # Every user's password comes from the generated Secret, and the exporter logs in as itself.
+  # Every user's password comes from a Secret generated in its store's namespace, and the exporter
+  # logs in as itself.
   assert {
-    condition = (
-      kubernetes_manifest.counter_store_users[0].manifest.spec.target.name == local.counter_store_values.auth.usersExistingSecret &&
-      kubernetes_manifest.counter_store_users[0].manifest.spec.refreshPolicy == "CreatedOnce" &&
-      toset(kubernetes_manifest.counter_store_passwords[0].manifest.spec.secretKeys) == toset([for name, user in local.counter_store_values.auth.aclUsers : try(user.passwordKey, name)]) &&
-      contains(local.counter_store_values.metrics.exporter.args, "--redis.user=${local.counter_store_values.auth.aclUsers.default.passwordKey}")
-    )
-    error_message = "Each user's password must be generated once into the Secret the chart reads, and the exporter must log in as its own user."
+    condition = alltrue([for service, store in helm_release.counter_store : (
+      kubernetes_manifest.counter_store_users[service].manifest.metadata.namespace == store.namespace &&
+      kubernetes_manifest.counter_store_passwords[service].manifest.metadata.namespace == store.namespace &&
+      kubernetes_manifest.counter_store_users[service].manifest.spec.target.name == local.counter_store_values.auth.usersExistingSecret &&
+      kubernetes_manifest.counter_store_users[service].manifest.spec.refreshPolicy == "CreatedOnce" &&
+      toset(kubernetes_manifest.counter_store_passwords[service].manifest.spec.secretKeys) == toset([for name, user in local.counter_store_values.auth.aclUsers : try(user.passwordKey, name)])
+    )]) && contains(local.counter_store_values.metrics.exporter.args, "--redis.user=${local.counter_store_values.auth.aclUsers.default.passwordKey}")
+    error_message = "Each user's password must be generated once into the Secret the chart reads, beside its store, and the exporter must log in as its own user."
   }
 
+  # The services whose API counts in a store, each with that API. Exactly the stores must pass.
   assert {
-    condition = (
-      toset(one(kubernetes_network_policy_v1.counter_store.spec).policy_types) == toset(["Ingress", "Egress"]) &&
-      length(one(kubernetes_network_policy_v1.counter_store.spec).egress) == 0 &&
-      [for rule in one(kubernetes_network_policy_v1.counter_store.spec).ingress : [for port in rule.ports : port.port]] == [["6379"], ["9121"]] &&
-      [for peer in one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == [module.authentication_rest[0].pod_labels["app.kubernetes.io/name"]] &&
-      length(one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].from).namespace_selector) == 0 &&
-      [for peer in one(kubernetes_network_policy_v1.counter_store.spec).ingress[1].from : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]] == [helm_release.alloy.namespace] &&
-      one(one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[1].from).pod_selector).match_labels == one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels
-    )
-    error_message = "Only Authentication's API pods may reach Valkey, only Alloy its exporter, and the store's policy may open no egress."
+    condition = toset([for service, workload in { authentication = module.authentication_rest[0], narrative-engine = module.narrative_engine_rest[0] } : service if alltrue([
+      helm_release.counter_store[service].namespace == service,
+      one(kubernetes_network_policy_v1.counter_store[service].metadata).namespace == service,
+      toset(one(kubernetes_network_policy_v1.counter_store[service].spec).policy_types) == toset(["Ingress", "Egress"]),
+      length(one(kubernetes_network_policy_v1.counter_store[service].spec).egress) == 0,
+      [for rule in one(kubernetes_network_policy_v1.counter_store[service].spec).ingress : [for port in rule.ports : port.port]] == [["6379"], ["9121"]],
+      [for peer in one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[0].from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] == [workload.pod_labels["app.kubernetes.io/name"]],
+      startswith(workload.service_account, "system:serviceaccount:${service}:"),
+      length(one(one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[0].from).namespace_selector) == 0,
+      [for peer in one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[1].from : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]] == [helm_release.alloy.namespace],
+      one(one(one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[1].from).pod_selector).match_labels == one(kubernetes_network_policy_v1.alloy.spec).pod_selector[0].match_labels,
+    ])]) == toset(keys(helm_release.counter_store))
+    error_message = "Each store must serve one service: only that service's API pods may reach its Valkey, only Alloy its exporter, and its policy may open no egress."
   }
 
-  # The chart names the store's Service after its release.
+  # The chart names each store's Service after its release.
   assert {
-    condition = (
-      local.authentication_env.REST_RATE_LIMIT_STORE_ADDR == "${helm_release.counter_store[0].name}.${helm_release.counter_store[0].namespace}.svc:${one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].ports).port}" &&
-      local.authentication_secret_env.REST_RATE_LIMIT_STORE_PASSWORD == { secret = kubernetes_manifest.counter_store_users[0].manifest.spec.target.name, key = local.authentication_env.REST_RATE_LIMIT_STORE_USERNAME } &&
-      contains(kubernetes_manifest.counter_store_passwords[0].manifest.spec.secretKeys, local.authentication_env.REST_RATE_LIMIT_STORE_USERNAME) &&
-      one([for rule in one(kubernetes_network_policy_v1.authentication_rest.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
-        try(length(peer.namespace_selector) == 0 && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
-      ])]) == [one(one(kubernetes_network_policy_v1.counter_store.spec).ingress[0].ports).port]
-    )
-    error_message = "Authentication must count in the store as the limiter, with the password External Secrets generated, through an egress to the store's port alone."
+    condition = toset([for service, client in {
+      authentication   = { env = local.authentication_env, secret_env = local.authentication_secret_env, policy = kubernetes_network_policy_v1.authentication_rest }
+      narrative-engine = { env = local.narrative_engine_env, secret_env = local.narrative_engine_secret_env, policy = kubernetes_network_policy_v1.narrative_engine_rest }
+      } : service if alltrue([
+        client.env.REST_RATE_LIMIT_STORE_ADDR == "${helm_release.counter_store[service].name}.${helm_release.counter_store[service].namespace}.svc:${one(one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[0].ports).port}",
+        client.secret_env.REST_RATE_LIMIT_STORE_PASSWORD == { secret = kubernetes_manifest.counter_store_users[service].manifest.spec.target.name, key = client.env.REST_RATE_LIMIT_STORE_USERNAME },
+        contains(kubernetes_manifest.counter_store_passwords[service].manifest.spec.secretKeys, client.env.REST_RATE_LIMIT_STORE_USERNAME),
+        one([for rule in one(client.policy.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
+          try(length(peer.namespace_selector) == 0 && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
+        ])]) == [one(one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[0].ports).port],
+    ])]) == toset(keys(helm_release.counter_store))
+    error_message = "Each service must count in its own store as the limiter, with the password External Secrets generated, through an egress to the store's port alone."
   }
 
   assert {
     condition = (
       local.counter_store_values.podAnnotations["k8s.grafana.com/scrape"] == "true" &&
-      contains(local.alloy_values.annotationAutodiscovery.namespaces, helm_release.counter_store[0].namespace) &&
+      alltrue([for store in values(helm_release.counter_store) : contains(local.alloy_values.annotationAutodiscovery.namespaces, store.namespace)]) &&
       one([for rule in one(kubernetes_network_policy_v1.alloy.spec).egress : [for port in rule.ports : port.port] if anytrue([for peer in rule.to :
-        try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"] == helm_release.counter_store[0].namespace && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
+        try(toset(one(one(peer.namespace_selector).match_expressions).values) == toset(values(helm_release.counter_store)[*].namespace) && one(peer.pod_selector).match_labels == tomap(local.counter_store_pods), false)
       ])]) == ["9121"]
     )
-    error_message = "Alloy must discover the counter store and reach its exporter's port alone."
+    error_message = "Alloy must discover every counter store and reach its exporter's port alone."
   }
 }
 

@@ -185,25 +185,39 @@ run "links_every_alert" {
   }
 }
 
-run "watches_the_counter_store" {
+run "watches_every_counter_store" {
   command = plan
 
   assert {
-    condition     = toset(grafana_rule_group.alerts["rate-limits"].rule[*].name) == toset(["Counter store down", "Rate limits counted locally", "Counters evicted"])
-    error_message = "Authentication's rate limits need three alerts: the counter store down, counting in the pods while it answers, and an evicted counter."
+    condition = length(local.counter_stores) > 0 && toset(grafana_rule_group.alerts["rate-limits"].rule[*].name) == toset(flatten([for service in local.counter_stores : [
+      "${service}: counter store down", "${service}: rate limits counted locally", "${service}: counters evicted",
+    ]]))
+    error_message = "Each counter store needs three alerts: the store down, counting in the pods while it answers, and an evicted counter."
+  }
+
+  # Each rule reads its own store, names its service, and links that store's panel.
+  assert {
+    condition = alltrue([for rule in grafana_rule_group.alerts["rate-limits"].rule : alltrue([
+      strcontains(jsondecode(rule.data[0].model).expr, "{namespace=\"${split(":", rule.name)[0]}\"}"),
+      strcontains(rule.annotations.summary, "The ${split(":", rule.name)[0]} "),
+      startswith(one([for name, element in jsondecode(grafana_apps_dashboard_dashboard_v2.services.spec.json).elements : name if tostring(element.spec.id) == rule.annotations.__panelId__]), "${split(":", rule.name)[0]}-"),
+    ])])
+    error_message = "A store's alerts must read its own namespace, name its service in their summary, and link that service's panels."
   }
 
   # The exporter runs beside Valkey, so a store whose pod is gone sends no series.
   assert {
-    condition     = strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "Counter store down"]).data[0].model).expr, "or absent(redis_up{")
+    condition = alltrue([for service in local.counter_stores :
+      strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "${service}: counter store down"]).data[0].model).expr, "or absent(redis_up{")
+    ])
     error_message = "The store-down alert must also fire when the store sends no series."
   }
 
   assert {
-    condition = alltrue([for fragment in ["rate_limit_local=\"true\"", "and on () max(redis_up{"] :
-      strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "Rate limits counted locally"]).data[0].model).expr, fragment)
-    ])
-    error_message = "The counting-locally alert must read the spans' rate_limit.local, and fire only while the store answers, since the store-down alert reports the rest."
+    condition = alltrue([for service in local.counter_stores : alltrue([for fragment in ["service_name=\"service-${service}\", rate_limit_local=\"true\"", "and on () max(redis_up{"] :
+      strcontains(jsondecode(one([for rule in grafana_rule_group.alerts["rate-limits"].rule : rule if rule.name == "${service}: rate limits counted locally"]).data[0].model).expr, fragment)
+    ])])
+    error_message = "The counting-locally alert must read its own service's spans' rate_limit.local, and fire only while the store answers, since the store-down alert reports the rest."
   }
 }
 

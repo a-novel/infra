@@ -75,9 +75,9 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `Signing keys running out`           | a key usage's newest key signs for less than 3 days more, for 15 minutes                          |
 | `GenAI keeps content past retention` | a settled generation stays stored 30 minutes past its retention, for 5 minutes                    |
 | `Certificate expiring`               | a certificate cert-manager issues expires in less than 14 days, for an hour                       |
-| `Counter store down`                 | Authentication's counter store has not answered for 5 minutes                                     |
-| `Rate limits counted locally`        | Authentication counted requests in its pods for 5 minutes while the store answered                |
-| `Counters evicted`                   | the counter store evicted a counter in the last hour                                              |
+| `<service>: counter store down`      | the service's counter store, in its namespace, has not answered for 5 minutes                     |
+| `<service>: rate limits counted…`    | the service counted requests in its pods for 5 minutes while its counter store answered           |
+| `<service>: counters evicted`        | the service's counter store evicted a counter in the last hour                                    |
 
 - **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
@@ -125,19 +125,22 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
   under 14 days has failed to renew for weeks. Read its `Certificate`'s conditions and events, then
   cert-manager's logs in its namespace, as [Ops basics](../ops-basics.md#identities) shows. Once it
   expires, its database or service API refuses every connection, since its callers verify it.
-- **The counter store down:** Valkey's pod in the `authentication` namespace stopped, or its
-  exporter cannot log in. Until it answers, each Authentication pod counts its rate limits on its
-  own, so several pods multiply every budget. Read the `valkey` pod and its containers' logs, as
-  [Ops basics](../ops-basics.md#identities) shows. A restart empties the counters, which only
+- **A counter store down:** the alert names the service, `authentication` or `narrative-engine`,
+  whose store runs in the namespace of its name. Valkey's pod there stopped, or its exporter cannot
+  log in. Until it answers, each of the service's pods counts its rate limits on its own, so
+  several pods multiply every budget. Read the namespace's `valkey` pod and its containers' logs,
+  as [Ops basics](../ops-basics.md#identities) shows. A restart empties the counters, which only
   resets the current windows. `Collector silent` firing with it means Alloy stopped, not the store.
-- **Rate limits counted locally while the store answers:** Authentication's pods cannot reach
-  Valkey or log in. Check the `rest` network policy in the cluster root's `authentication.tf`,
-  whose egress must reach the store on 6379, then the limiter's ACL in `counter-store.tf`, which
-  must admit every command golib sends. A store answering slower than 100 ms fires it too: **Store
-  commands**, in the Services tab's Rate limits section, shows its time.
-- **Counters evicted:** the counters outgrew the store's memory cap, so Valkey dropped the least
-  recently used, and their limits loosened until their windows ended. Raise `maxmemory` in the
-  cluster root's `counter-store.tf`, and the pod's memory with it, in a pull request.
+- **Rate limits counted locally while the store answers:** the service's pods cannot reach its
+  Valkey or log in. Check the `rest` network policy in the service's file of the cluster root,
+  `authentication.tf` or `narrative-engine.tf`, whose egress must reach the store on 6379, then
+  the store's `valkey` policy and the limiter's ACL in `counter-store.tf`, which must admit every
+  command golib sends. A store answering slower than 100 ms fires it too: **Store commands**, in
+  the Rate limits section of the service's Services tab, shows its time.
+- **Counters evicted:** the service's counters outgrew its store's memory cap, so Valkey dropped the
+  least recently used, and their limits loosened until their windows ended. Raise `maxmemory` in
+  the cluster root's `counter-store.tf`, which every store shares, and the pod's memory with it,
+  in a pull request.
 - **A Services panel empty:** its database query fails, and the two alerts above, which read such
   queries, stay silent. `cnpg_errors_total` names the query and its error in `errorUserQueries`. A
   `permission denied` means the cluster root's `queries/<database>.sql` misses a column it reads.
