@@ -38,7 +38,7 @@ addon_images = {
   config_reloader    = "quay.io/prometheus-operator/prometheus-config-reloader:v0.94.2@sha256:a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71"
   kube_state_metrics = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"
 
-  # Authentication's counter store and its exporter, which move with the Valkey chart.
+  # The counter stores' server and exporter, which move with the Valkey chart.
   valkey         = "docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b"
   redis_exporter = "ghcr.io/oliver006/redis_exporter:v1.96.0@sha256:3d57b9eb142a62ffc600063606a41cd471cd53d81bed10be5b56b3a8918f2c26"
 }
@@ -65,16 +65,20 @@ databases = {
   profile          = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
 }
 
+# The services whose API pods share each rate limit's budget through a Valkey of their own
+# (counter-store.tf), never another service's.
+counter_stores = ["authentication", "narrative-engine"]
+
 # Each service's ceiling, so one service cannot take the room another needs: its workloads at their
-# autoscalers' maximum, a rollout's surge pod, its database's two instances and its jobs, with room
-# above. Together they fit the node pool at its maximum. Grafana warns at 80% of each; raising one
-# is a deliberate change.
+# autoscalers' maximum, a rollout's surge pod, its database's two instances, its counter store and
+# its jobs, with room above. Together they fit the node pool at its maximum. Grafana warns at 80% of
+# each; raising one is a deliberate change.
 service_budgets = {
   account          = { cpu = "1", memory = "3Gi", pods = 10 }
   authentication   = { cpu = "3", memory = "8Gi", pods = 20 }
   genai            = { cpu = "4", memory = "28Gi", pods = 20 }
   json-keys        = { cpu = "3", memory = "8Gi", pods = 20 }
-  narrative-engine = { cpu = "2", memory = "6Gi", pods = 10 }
+  narrative-engine = { cpu = "2", memory = "6Gi", pods = 12 }
   profile          = { cpu = "1", memory = "6Gi", pods = 10 }
   studio           = { cpu = "1", memory = "3Gi", pods = 10 }
 }

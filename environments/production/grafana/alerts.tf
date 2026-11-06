@@ -353,39 +353,42 @@ locals {
     },
   ]
 
-  # Authentication's counter store (the cluster root's counter-store.tf). While it does not answer,
-  # each pod counts its rate limits on its own. Its exporter runs beside Valkey, so a store whose pod
-  # is gone sends no series. Once its counters fill its memory cap, Valkey evicts some, which loosens
-  # their limits.
-  rate_limit_rules = [
+  # Each service's counter store (the cluster root's counter-store.tf), in the service's namespace.
+  # While a store does not answer, each of its service's pods counts its rate limits on its own. Its
+  # exporter runs beside Valkey, so a store whose pod is gone sends no series. Once its counters fill
+  # its memory cap, Valkey evicts some, which loosens their limits. Each rule links its own store's
+  # panel in the Services dashboard, whose name starts with the service's.
+  counter_stores  = provider::terraform::decode_tfvars(file("${path.module}/../cluster/terraform.tfvars")).counter_stores
+  services_panels = { for name, element in jsondecode(file("${path.module}/dashboards/services.json")).elements : name => element.spec.id }
+  rate_limit_rules = flatten([for service in local.counter_stores : [
     {
-      title     = "Counter store down"
+      title     = "${service}: counter store down"
       for       = "5m"
       dashboard = "services"
-      panel     = 28
-      summary   = "Authentication's counter store has not answered for 5 minutes, so each pod counts its rate limits on its own."
-      expr      = "max(redis_up{namespace=\"authentication\"}) < 1 or absent(redis_up{namespace=\"authentication\"})"
+      panel     = local.services_panels["${service}-counter-store"]
+      summary   = "The ${service} counter store has not answered for 5 minutes, so each ${service} pod counts its rate limits on its own."
+      expr      = "max(redis_up{namespace=\"${service}\"}) < 1 or absent(redis_up{namespace=\"${service}\"})"
     },
     {
-      title     = "Rate limits counted locally"
+      title     = "${service}: rate limits counted locally"
       for       = "5m"
       dashboard = "services"
-      panel     = 31
-      summary   = "Authentication counted {{ humanize $values.query.Value }} requests in its pods over 5 minutes while its counter store answered."
+      panel     = local.services_panels["${service}-counted-locally"]
+      summary   = "The ${service} pods counted {{ humanize $values.query.Value }} requests on their own over 5 minutes while their counter store answered."
       expr      = <<-EOT
-        sum(increase(${local.calls}{service_name="service-authentication", rate_limit_local="true"}[5m])) > 0
-          and on () max(redis_up{namespace="authentication"}) == 1
+        sum(increase(${local.calls}{service_name="service-${service}", rate_limit_local="true"}[5m])) > 0
+          and on () max(redis_up{namespace="${service}"}) == 1
       EOT
     },
     {
-      title     = "Counters evicted"
+      title     = "${service}: counters evicted"
       for       = "1m"
       dashboard = "services"
-      panel     = 29
-      summary   = "Authentication's counter store evicted {{ humanize $values.query.Value }} counters in the last hour, which loosened their limits."
-      expr      = "sum(increase(redis_evicted_keys_total{namespace=\"authentication\"}[1h])) > 0"
+      panel     = local.services_panels["${service}-counter-evictions"]
+      summary   = "The ${service} counter store evicted {{ humanize $values.query.Value }} counters in the last hour, which loosened their limits."
+      expr      = "sum(increase(redis_evicted_keys_total{namespace=\"${service}\"}[1h])) > 0"
     },
-  ]
+  ]])
 
   rule_groups = merge(local.service_rules, {
     capacity      = local.capacity_rules

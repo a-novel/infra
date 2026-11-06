@@ -30,6 +30,16 @@ variable "adopted_databases" {
   default     = []
 }
 
+variable "counter_stores" {
+  description = "The services whose API pods share each rate limit's budget through a counter store of their own, in their namespace. No service shares another's store."
+  type        = set(string)
+
+  validation {
+    condition     = alltrue([for service in var.counter_stores : contains(var.namespaces, service)])
+    error_message = "Each counter store belongs to a service's namespace."
+  }
+}
+
 variable "custom_resources" {
   description = "Whether to manage the resources whose kinds the add-ons define. A fresh cluster lacks those kinds until the add-ons install, so a rebuild turns this off before the cluster is replaced and on once they run."
   type        = bool

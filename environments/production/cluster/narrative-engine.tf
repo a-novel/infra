@@ -1,6 +1,8 @@
 # Narrative-engine's REST API, which stores each project's Scenes Composer and runs its AI suggestions
 # through GenAI. Studio calls it for its writers (a-novel/.github#565), and relays its streams through
-# a backend that lets them last (platforms.tf).
+# a backend that lets them last (platforms.tf). Its pods share each rate limit's budget through its
+# counter store (counter-store.tf). golib's router limit (REST_RATE_LIMIT) stays in each pod and grows
+# with their count.
 locals {
   narrative_engine_env = merge(local.database_env["narrative-engine"], local.downtime_env["narrative-engine"], local.telemetry_env["narrative-engine"].api, {
     # A read of a whole project takes up to 128 MiB, and the reads together half of this limit: one
@@ -20,6 +22,13 @@ locals {
     SERVICE_TOKEN_CALLERS   = join(",", [local.platform_callers.studio, "system:serviceaccount:narrative-engine:smoke"])
     # Only Studio calls the API for its writers, so it can trust the visitor IP Studio forwards.
     REST_CLIENT_IP_HEADER = "X-Client-IP"
+    # Every pod counts its rate limits in the counter store as its limiter user, and on its own
+    # while the store does not answer.
+    REST_RATE_LIMIT_STORE_ADDR     = "valkey.narrative-engine.svc:6379"
+    REST_RATE_LIMIT_STORE_USERNAME = "limiter"
+  })
+  narrative_engine_secret_env = merge(local.database_secret_env, {
+    REST_RATE_LIMIT_STORE_PASSWORD = { secret = local.counter_store_values.auth.usersExistingSecret, key = "limiter" }
   })
 }
 
@@ -35,7 +44,7 @@ module "narrative_engine_rest" {
   service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
   http_health_path = "/v1/ping"
   env              = local.narrative_engine_env
-  secret_env       = local.database_secret_env
+  secret_env       = local.narrative_engine_secret_env
   service_tokens = {
     (local.json_keys_env.SERVICE_TOKEN_AUDIENCE)  = "SERVICE_JSON_KEYS_TOKEN_PATH"
     (local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_GENAI_TOKEN_PATH"
@@ -49,11 +58,13 @@ module "narrative_engine_rest" {
   # reads.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations]
+  # Its pods read the limiter's password as they start.
+  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.counter_store_users]
 }
 
-# Studio's web pods and the smoke check call the API, which calls JSON Keys and GenAI, and reaches the
-# issuer's keys through Google's restricted API addresses.
+# Studio's web pods and the smoke check call the API, which calls JSON Keys and GenAI, reaches the
+# issuer's keys through Google's restricted API addresses, and counts its rate limits in the counter
+# store.
 resource "kubernetes_network_policy_v1" "narrative_engine_rest" {
   metadata {
     name      = "rest"
@@ -120,6 +131,19 @@ resource "kubernetes_network_policy_v1" "narrative_engine_rest" {
 
       ports {
         port     = "443"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = local.counter_store_pods
+        }
+      }
+
+      ports {
+        port     = "6379"
         protocol = "TCP"
       }
     }

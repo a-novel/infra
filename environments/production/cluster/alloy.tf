@@ -145,18 +145,18 @@ locals {
       namespaces   = local.admitted_namespaces
     }
 
-    # The databases' pods, which CloudNativePG annotates for it (databases.tf), Authentication's
-    # counter store (counter-store.tf) and cert-manager's controller (modules/database-operator). Each
-    # database instance's settings cost hundreds of series.
+    # The databases' pods, which CloudNativePG annotates for it (databases.tf), the counter stores
+    # (counter-store.tf) and cert-manager's controller (modules/database-operator). Each database
+    # instance's settings cost hundreds of series.
     annotationAutodiscovery = {
       enabled       = true
       collector     = "alloy"
       destinations  = ["grafana-cloud"]
-      namespaces    = concat(sort(keys(var.databases)), [local.namespace["cert-manager"]])
+      namespaces    = concat(sort(setunion(keys(var.databases), var.counter_stores)), [local.namespace["cert-manager"]])
       services      = { enabled = false }
       bearerToken   = { enabled = false }
       metricsTuning = { excludeMetrics = ["cnpg_pg_settings_setting"] }
-      # Of the counter store's series, which all start with redis_, Alloy keeps only those the first
+      # Of the counter stores' series, which all start with redis_, Alloy keeps only those the first
       # rule marks: availability, uptime, memory, evicted and expired keys, clients, and httprate's
       # commands with their time. Of cert-manager's, it keeps only each certificate's expiry, which
       # the second rule marks.
@@ -323,7 +323,7 @@ resource "helm_release" "alloy" {
 }
 
 # The services' pods send to the receiver. Alloy reaches the API server and the kubelets in the node
-# range, kube-state-metrics, the databases' metrics, the counter store's exporter, cert-manager's
+# range, kube-state-metrics, the databases' metrics, the counter stores' exporters, cert-manager's
 # controller, and Grafana (egress.tf).
 resource "kubernetes_network_policy_v1" "alloy" {
   metadata {
@@ -437,7 +437,11 @@ resource "kubernetes_network_policy_v1" "alloy" {
     egress {
       to {
         namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = local.namespace["authentication"] }
+          match_expressions {
+            key      = "kubernetes.io/metadata.name"
+            operator = "In"
+            values   = sort(var.counter_stores)
+          }
         }
         pod_selector {
           match_labels = local.counter_store_pods

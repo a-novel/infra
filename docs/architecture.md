@@ -118,14 +118,16 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   trust-manager copies into every service namespace as the `services-ca` ConfigMap. The kubelet's
   gRPC probe speaks only plaintext, so a gRPC server's probes check that its TLS port accepts
   connections.
-- **Counter store:** one Valkey pod in the `authentication` namespace, from the official chart,
-  holds only the rate-limit counters, up to 64 MiB, evicting the least recently used first. It
-  keeps nothing on disk. Its users each get a password External Secrets generates once into the
-  `valkey-users` Secret: the limiter reaches the `httprate:*` keys alone, and the exporter reads
-  statistics and no key. Only Authentication's API pods reach Valkey, and only Alloy its exporter.
-  Authentication's pods share each rate limit's budget there, and each counts on its own while it
-  does not answer. golib's router limit (`REST_RATE_LIMIT`) stays in each pod and grows with their
-  count: it guards against floods, while the shared limits guard sign-in.
+- **Counter stores:** each service the cluster root's `counter_stores` lists, Authentication and
+  narrative-engine, runs one Valkey pod in its own namespace, from the official chart. It holds only
+  that service's rate-limit counters, up to 64 MiB, evicting the least recently used first, and
+  keeps nothing on disk. No service shares another's store. Its users each get a password External
+  Secrets generates once into the namespace's `valkey-users` Secret: the limiter reaches the
+  `httprate:*` keys alone, and the exporter reads statistics and no key. Only its service's API
+  pods reach Valkey, and only Alloy its exporter. Those pods share each rate limit's budget there,
+  and each counts on its own while it does not answer. golib's router limit (`REST_RATE_LIMIT`)
+  stays in each pod and grows with their count: it guards against floods, while the shared limits
+  guard sign-in and generations.
 - **Telemetry:** one Alloy pod in the `alloy` namespace sends every signal to the Grafana Cloud
   stack's OTLP gateway. The workloads export their traces and logs to its OTLP/HTTP receiver. It
   gives each server and root span an outcome, `a_novel.outcome`, then derives span metrics from
@@ -134,7 +136,7 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
   `queries/<database>.yaml`. It runs them as `cnpg_metrics_exporter`, which reads only the columns
   `queries/<database>.sql` grants it: a Job runs those grants as the tables' owner after each run of
   the migrations. Alloy scrapes the kubelets, cAdvisor, kube-state-metrics, the databases and the
-  counter store every 60 seconds, and sends the Kubernetes events, all in the cluster root's
+  counter stores every 60 seconds, and sends the Kubernetes events, all in the cluster root's
   namespaces. It reads its push token from `production-alloy-push-token`, and no Secret of the
   cluster. The Alloy Operator, which the chart runs, manages that namespace alone.
 - **Edge:** each platform answers on its own host through a Gateway of its name, on Google's global
@@ -175,9 +177,9 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 | Service          | Workloads                                                                                                       | Jobs                                                                                              |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | JSON Keys        | `grpc`: 2 to 3 pods; `rest`: 2 to 3 pods, which serve the public keys to the platforms                          | `migrations`, `rotate-keys`, `smoke`, `health`, `health-rest`                                     |
-| Authentication   | `rest`: 2 to 3 pods, which share their rate limits through the counter store                                    | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
+| Authentication   | `rest`: 2 to 3 pods, which share their rate limits through their counter store                                  | `migrations`, `refresh-token-purge`, `authorization-code-purge`, `maintenance`, `smoke`, `health` |
 | GenAI            | `grpc`: 2 to 3 pods; `sweep`: 2 to 3 pods, which check the generations nobody polled, each taking its own batch | `migrations`, `smoke`, `health`, `provider-check`                                                 |
-| Narrative engine | `rest`: 2 to 3 pods, which Studio calls for its writers                                                         | `migrations`, `smoke`, `health`                                                                   |
+| Narrative engine | `rest`: 2 to 3 pods, which Studio calls for its writers, sharing their rate limits through their counter store  | `migrations`, `smoke`, `health`                                                                   |
 | Profile          | `rest`: 2 to 3 pods, which every platform calls                                                                 | `migrations`, `smoke`, `health`                                                                   |
 | Studio           | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 | Account          | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
