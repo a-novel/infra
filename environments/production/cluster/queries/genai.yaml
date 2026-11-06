@@ -60,7 +60,9 @@ generations_settled:
 
 # generation_usage is never purged and has no index on time alone. Its keys start with the
 # generation's uuidv7, minted at submission, and a call reports its usage within about two and a
-# half hours, so the key bound reads only the last 27 hours.
+# half hours, so the key bound reads only the last 27 hours. The bound is the lowest uuidv7 of that
+# instant, built from now(), so the planner knows it and reads that range of the primary key. A
+# bound computed in a subquery is unknown at planning, and the plan scans the whole table.
 generation_tokens:
   query: |
     SELECT
@@ -72,7 +74,8 @@ generation_tokens:
       sum(output_tokens) AS output,
       sum(reasoning_tokens) AS reasoning
     FROM generation_usage
-    WHERE generation_id >= (SELECT uuidv7(interval '-27 hours')) AND created_at > now() - interval '24 hours'
+    WHERE generation_id >= (lpad(to_hex((extract(epoch FROM now() - interval '27 hours') * 1000)::bigint), 12, '0') || '70008000000000000000')::uuid
+      AND created_at > now() - interval '24 hours'
     GROUP BY 1, 2, 3
   primary: true
   target_databases: ["app"]
@@ -103,7 +106,8 @@ generation_users:
   query: |
     SELECT count(DISTINCT owner_id) AS active
     FROM generation_usage
-    WHERE generation_id >= (SELECT uuidv7(interval '-27 hours')) AND created_at > now() - interval '24 hours'
+    WHERE generation_id >= (lpad(to_hex((extract(epoch FROM now() - interval '27 hours') * 1000)::bigint), 12, '0') || '70008000000000000000')::uuid
+      AND created_at > now() - interval '24 hours'
   primary: true
   target_databases: ["app"]
   metrics:
