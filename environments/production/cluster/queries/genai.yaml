@@ -3,8 +3,9 @@
 # ones before the purge deletes them, so reading it whole stays cheap. No query exports an owner,
 # and none reads a payload or a response. genai.sql grants every column the queries read.
 
-# The live work, and how long its oldest rows have waited. The sweep settles a call still running
-# after two hours, so an older running call means the sweep stopped.
+# The live work, and how long its oldest rows have waited. The sweep stops a call still running
+# after two hours and settles it within ten minutes, so a running call much older than that means
+# the sweep stopped.
 generations_live:
   query: |
     SELECT

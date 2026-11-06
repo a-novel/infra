@@ -1898,7 +1898,7 @@
       "spec": {
         "id": 9,
         "title": "Oldest waits",
-        "description": "The oldest waiting generation and the oldest running call. The sweep settles a call still running after two hours, so a running call older than that means the sweep stopped.",
+        "description": "The oldest waiting generation and the oldest running call. The sweep stops a call still running after two hours and settles it within ten minutes, so a running call older than two hours and twenty minutes means the sweep stopped.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -1996,7 +1996,7 @@
                           },
                           {
                             "color": "orange",
-                            "value": 7200
+                            "value": 8400
                           }
                         ]
                       }
@@ -2441,7 +2441,7 @@
       "spec": {
         "id": 14,
         "title": "Refusals and provider pushback",
-        "description": "Each hour's submissions refused by a usage cap, and starts the provider turned away.",
+        "description": "Each hour's submissions refused by a usage cap, and starts that failed: never sent, turned away, rejected, or with an unknown outcome.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -2486,7 +2486,7 @@
                 "spec": {
                   "options": {
                     "regex": "^.*\\(failStart\\)$",
-                    "renamePattern": "turned away"
+                    "renamePattern": "failed to start"
                   }
                 }
               }
