@@ -3,16 +3,15 @@
 # ones before the purge deletes them, so reading it whole stays cheap. No query exports an owner,
 # and none reads a payload or a response. genai.sql grants every column the queries read.
 
-# The live work, and how long its oldest rows have waited. Every live row is checked at least every
-# minute while the sweep runs, so an old check means the sweep stopped.
+# The live work, and how long its oldest rows have waited. The sweep settles a call still running
+# after two hours, so an older running call means the sweep stopped.
 generations_live:
   query: |
     SELECT
       count(*) FILTER (WHERE status = 'pending') AS pending,
       count(*) FILTER (WHERE status = 'running') AS running,
       coalesce(extract(epoch FROM now() - min(created_at) FILTER (WHERE status = 'pending')), 0) AS oldest_pending_seconds,
-      coalesce(extract(epoch FROM now() - min(start_requested_at) FILTER (WHERE status = 'running')), 0) AS oldest_running_seconds,
-      coalesce(extract(epoch FROM now() - min(checked_at)), 0) AS oldest_check_seconds
+      coalesce(extract(epoch FROM now() - min(start_requested_at) FILTER (WHERE status = 'running')), 0) AS oldest_running_seconds
     FROM generations
     WHERE status IN ('pending', 'running')
   primary: true
@@ -30,9 +29,6 @@ generations_live:
     - oldest_running_seconds:
         usage: GAUGE
         description: Time since the oldest running call started.
-    - oldest_check_seconds:
-        usage: GAUGE
-        description: Time since the sweep last checked the least recently checked live generation.
 
 # The last hour's settled generations, by status and failure reason, which are fixed strings.
 generations_settled:
@@ -41,7 +37,6 @@ generations_settled:
       status::text AS status,
       coalesce(error, 'none') AS reason,
       count(*) AS total,
-      count(*) FILTER (WHERE attempt > 1) AS retried,
       percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM settled_at - created_at)) AS p95_seconds
     FROM generations
     WHERE settled_at > now() - interval '1 hour'
@@ -58,9 +53,6 @@ generations_settled:
     - total:
         usage: GAUGE
         description: Generations settled in the last hour.
-    - retried:
-        usage: GAUGE
-        description: Those that took more than one attempt.
     - p95_seconds:
         usage: GAUGE
         description: Time from submission to settlement, at the 95th percentile.

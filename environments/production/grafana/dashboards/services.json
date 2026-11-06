@@ -1898,7 +1898,7 @@
       "spec": {
         "id": 9,
         "title": "Oldest waits",
-        "description": "The oldest waiting generation, the oldest running call, and the longest since the sweep checked a live generation. The sweep checks each one at least every minute while it runs.",
+        "description": "The oldest waiting generation and the oldest running call. The sweep settles a call still running after two hours, so a running call older than that means the sweep stopped.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -1943,26 +1943,6 @@
                     }
                   }
                 }
-              },
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "refId": "C",
-                  "hidden": false,
-                  "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
-                    "datasource": {
-                      "name": "grafanacloud-prom"
-                    },
-                    "spec": {
-                      "instant": true,
-                      "legendFormat": "since a check",
-                      "expr": "max(cnpg_generations_live_oldest_check_seconds)"
-                    }
-                  }
-                }
               }
             ],
             "transformations": [],
@@ -1996,7 +1976,7 @@
                 {
                   "matcher": {
                     "id": "byFrameRefID",
-                    "options": "C"
+                    "options": "B"
                   },
                   "properties": [
                     {
@@ -2016,7 +1996,7 @@
                           },
                           {
                             "color": "orange",
-                            "value": 300
+                            "value": 7200
                           }
                         ]
                       }
@@ -2034,7 +2014,7 @@
       "spec": {
         "id": 10,
         "title": "Settled in the last hour",
-        "description": "Generations that reached a final status in the last hour, by reason, with those that needed a second attempt and the time from submission to settlement.",
+        "description": "Generations that reached a final status in the last hour, by reason, with the time from submission to settlement.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -2056,26 +2036,6 @@
                       "instant": true,
                       "format": "table",
                       "expr": "max by (status, reason) (cnpg_generations_settled_total)"
-                    }
-                  }
-                }
-              },
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "refId": "B",
-                  "hidden": false,
-                  "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
-                    "datasource": {
-                      "name": "grafanacloud-prom"
-                    },
-                    "spec": {
-                      "instant": true,
-                      "format": "table",
-                      "expr": "max by (status, reason) (cnpg_generations_settled_retried)"
                     }
                   }
                 }
@@ -2121,7 +2081,6 @@
                       "status": "Status",
                       "reason": "Reason",
                       "Value #A": "Generations",
-                      "Value #B": "Retried",
                       "Value #C": "p95"
                     }
                   }
@@ -2482,7 +2441,7 @@
       "spec": {
         "id": 14,
         "title": "Refusals and provider pushback",
-        "description": "Each hour's submissions refused by a usage cap, starts the provider turned away, and failed calls queued for another attempt.",
+        "description": "Each hour's submissions refused by a usage cap, and starts the provider turned away.",
         "links": [],
         "data": {
           "kind": "QueryGroup",
@@ -2504,7 +2463,7 @@
                       "queryType": "traceql",
                       "metricsQueryType": "range",
                       "step": "1h",
-                      "query": "{ resource.service.name = \"service-genai\" && (name = \"core.GenerationCheck(releaseStart)\" || name = \"core.GenerationCheck(requeue)\" || (name = \"core.GenerationSubmit(admit)\" && status = error)) } | count_over_time() by (name)"
+                      "query": "{ resource.service.name = \"service-genai\" && (name = \"core.GenerationCheck(failStart)\" || (name = \"core.GenerationSubmit(admit)\" && status = error)) } | count_over_time() by (name)"
                     }
                   }
                 }
@@ -2526,18 +2485,8 @@
                 "group": "renameByRegex",
                 "spec": {
                   "options": {
-                    "regex": "^.*\\(releaseStart\\)$",
+                    "regex": "^.*\\(failStart\\)$",
                     "renamePattern": "turned away"
-                  }
-                }
-              },
-              {
-                "kind": "Transformation",
-                "group": "renameByRegex",
-                "spec": {
-                  "options": {
-                    "regex": "^.*\\(requeue\\)$",
-                    "renamePattern": "queued again"
                   }
                 }
               }
