@@ -206,7 +206,8 @@ jobs:
     needs: [changes, bootstrap, foundation]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.cluster == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The apply waits up to 45 minutes on a migrations Job.
+    timeout-minutes: 60
     environment: production
     permissions:
       attestations: read
