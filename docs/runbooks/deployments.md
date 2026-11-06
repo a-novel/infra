@@ -65,7 +65,7 @@ upgrade whose downtime has since started.
    leaves one conflicting, the next push to `master` rebuilds it from `master`.
 4. **The cluster job applies it:**
    1. it copies the images to the service's Artifact Registry repository;
-   2. it runs the migrations Job and waits for it;
+   2. it runs the migrations Job and waits for it, which Kubernetes ends after 40 minutes;
    3. it rolls the workloads, each onto new pods once their probes pass;
    4. it runs the smoke Job and waits for it.
 
@@ -199,7 +199,8 @@ plans only the rest.
      head. Once `master` has moved on, it refuses, and a deploy run by hand applies the latest code
      instead.
    - **Failed migrations or smoke Job:** the previous pods keep serving, since the workloads roll
-     only after the migrations. Read the Job's logs, here in JSON Keys' namespace:
+     only after the migrations. A migration still running after 40 minutes fails the same way. Read
+     the Job's logs, here in JSON Keys' namespace:
 
      ```bash
      SERVICE=json-keys

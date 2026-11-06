@@ -430,11 +430,12 @@ run "runs_each_release_from_its_private_repository" {
         endswith(job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
         job.wait_for_completion &&
         job.spec[0].backoff_limit == 0 &&
+        job.spec[0].active_deadline_seconds < tonumber(trimsuffix(job.timeouts.create, "m")) * 60 &&
         !job.spec[0].template[0].spec[0].enable_service_links &&
         one(one(job.spec[0].template[0].spec[0].container).security_context).run_as_non_root
       ])
     )
-    error_message = "Each service's migrations must run once per image and per database lineage, to completion, before its server rolls."
+    error_message = "Each service's migrations must run once per image and per database lineage, to completion, before its server rolls, and end before the deploy stops waiting on them."
   }
 
   assert {

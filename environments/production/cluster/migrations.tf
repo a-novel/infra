@@ -11,8 +11,11 @@ resource "kubernetes_job_v1" "migrations" {
   }
 
   spec {
-    backoff_limit           = 0
-    active_deadline_seconds = 600
+    backoff_limit = 0
+    # Kubernetes ends a migration after 40 minutes, before the deploy stops waiting on it. A run that
+    # outlived the wait would stay tainted and running, and the next deploy's replacement would kill
+    # it. The wait fits the one-hour token the deploy reaches the cluster with.
+    active_deadline_seconds = 2400
 
     template {
       metadata {
@@ -111,7 +114,7 @@ resource "kubernetes_job_v1" "migrations" {
   wait_for_completion = true
 
   timeouts {
-    create = "10m"
+    create = "45m"
   }
 
   depends_on = [kubernetes_manifest.database, kubernetes_network_policy_v1.database_clients]
