@@ -1,8 +1,8 @@
 images = {
-  database    = "ghcr.io/a-novel/service-authentication/database:v2.25.3@sha256:e49463997f86041d1e146c6060cc19ab37992ea7ef929627584db6ff16832ffa"
-  maintenance = "ghcr.io/a-novel/service-authentication/jobs/maintenance:v2.25.3@sha256:3b3392cff2c3196d58a1a851df9cd3ad9362779cdc7d4658ce5ab727e188bdbc"
-  migrations  = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.25.3@sha256:9e70eabf0fad9d3fb7bea5e3b87c4b14bf49fc1434d1207ca2d6fa9bf721f303"
-  rest        = "ghcr.io/a-novel/service-authentication/rest:v2.25.3@sha256:4de023af0aa54f44367406383381b291edb401cc4267b280e8083a66dd83e9b4"
+  database    = "ghcr.io/a-novel/service-authentication/database:v2.25.4@sha256:eacb92cda967cca5fd86c5b13d652cb4b6de3ba66794c7ceb7428b62970831e1"
+  maintenance = "ghcr.io/a-novel/service-authentication/jobs/maintenance:v2.25.4@sha256:bfaf3cdb0703d844ca4603dc05231d40e7cd94523b6eb5012262ab536a0d324a"
+  migrations  = "ghcr.io/a-novel/service-authentication/jobs/migrations:v2.25.4@sha256:9f1687aeaafb232256e86c0f2aedf453b29ef8a20036a5a1e74fcd4b9d600321"
+  rest        = "ghcr.io/a-novel/service-authentication/rest:v2.25.4@sha256:8401d087e8b417412c538003eafe148044f1193cf6fd671ebf74cde9f947a0f2"
 }
 
 smtp = {
