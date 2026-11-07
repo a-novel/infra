@@ -5,7 +5,7 @@ terraform {
   }
 
   # renovate: datasource=github-releases depName=opentofu/opentofu
-  required_version = "= 1.13.8"
+  required_version = "= 1.13.9"
 
   required_providers {
     google = {
