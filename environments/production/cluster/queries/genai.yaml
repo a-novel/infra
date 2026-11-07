@@ -31,26 +31,28 @@ generations_live:
         usage: GAUGE
         description: Time since the oldest running call started.
 
-# The last hour's settled generations, by status and failure reason, which are fixed strings.
+# The last hour's settled generations, by status and failure reason, which are fixed strings. The
+# rollup adds an `all` row, which an hour without one still returns, so it reads as 0 rather than as
+# no data. A generation that did not fail has a NULL error too, so GROUPING names the `all` row.
 generations_settled:
   query: |
     SELECT
-      status::text AS status,
-      coalesce(error, 'none') AS reason,
+      coalesce(status::text, 'all') AS status,
+      CASE WHEN GROUPING(error) = 1 THEN 'all' ELSE coalesce(error, 'none') END AS reason,
       count(*) AS total,
-      percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM settled_at - created_at)) AS p95_seconds
+      coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM settled_at - created_at)), 0) AS p95_seconds
     FROM generations
     WHERE settled_at > now() - interval '1 hour'
-    GROUP BY 1, 2
+    GROUP BY ROLLUP ((status, error))
   primary: true
   target_databases: ["app"]
   metrics:
     - status:
         usage: LABEL
-        description: The status the generation settled in.
+        description: The status the generation settled in, or all of them.
     - reason:
         usage: LABEL
-        description: Why it failed, or none.
+        description: Why it failed, none, or all of them.
     - total:
         usage: GAUGE
         description: Generations settled in the last hour.
@@ -62,33 +64,35 @@ generations_settled:
 # generation's uuidv7, minted at submission, and a call reports its usage within about two and a
 # half hours, so the key bound reads only the last 27 hours. The bound is the lowest uuidv7 of that
 # instant, built from now(), so the planner knows it and reads that range of the primary key. A
-# bound computed in a subquery is unknown at planning, and the plan scans the whole table.
+# bound computed in a subquery is unknown at planning, and the plan scans the whole table. The rollup
+# adds an `all` row, which a day without a call still returns, so it reads as 0 rather than as no
+# data. A call without a tier has a NULL tier too, so GROUPING names the `all` row.
 generation_tokens:
   query: |
     SELECT
-      model,
-      class,
-      coalesce(tier, 'none') AS tier,
-      sum(input_tokens) AS input,
-      sum(cached_input_tokens) AS cached_input,
-      sum(output_tokens) AS output,
-      sum(reasoning_tokens) AS reasoning
+      coalesce(model, 'all') AS model,
+      coalesce(class, 'all') AS class,
+      CASE WHEN GROUPING(tier) = 1 THEN 'all' ELSE coalesce(tier, 'none') END AS tier,
+      coalesce(sum(input_tokens), 0) AS input,
+      coalesce(sum(cached_input_tokens), 0) AS cached_input,
+      coalesce(sum(output_tokens), 0) AS output,
+      coalesce(sum(reasoning_tokens), 0) AS reasoning
     FROM generation_usage
     WHERE generation_id >= (lpad(to_hex((extract(epoch FROM now() - interval '27 hours') * 1000)::bigint), 12, '0') || '70008000000000000000')::uuid
       AND created_at > now() - interval '24 hours'
-    GROUP BY 1, 2, 3
+    GROUP BY ROLLUP ((model, class, tier))
   primary: true
   target_databases: ["app"]
   metrics:
     - model:
         usage: LABEL
-        description: The model that ran.
+        description: The model that ran, or all of them.
     - class:
         usage: LABEL
-        description: The reasoning effort that ran.
+        description: The reasoning effort that ran, or all of them.
     - tier:
         usage: LABEL
-        description: The provider's service tier, which sets the price.
+        description: The provider's service tier, which sets the price, none, or all of them.
     - input:
         usage: GAUGE
         description: Input tokens over the last 24 hours.
