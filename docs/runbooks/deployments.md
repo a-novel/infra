@@ -5,19 +5,21 @@ This runbook is about how merged changes reach production, and what to do when o
 
 ## What a deploy runs
 
-Every merge to `master` starts `deploy.yaml`. It compares `master` with the last _successful_
-deploy, and applies each root whose inputs changed since then. A root's inputs are:
+A merge to `master` starts `deploy.yaml`. It compares `master` with the last _successful_ deploy,
+and applies each root whose inputs changed since then. A root's inputs are:
 
 - its own directory, and the local modules it calls;
-- the tooling every root goes through: `.opentofu-version`, `.github/actions/tofu/` and
-  `deploy.yaml`;
+- `.opentofu-version`;
 - for the cluster root, every `terraform.tfvars` under `environments/production`, which holds the
   release pins, and the health check's script;
 - for the Grafana root, foundation's and the cluster root's `terraform.tfvars`;
 - for the GitHub root, the scripts its job runs after applying.
 
-Markdown files never count, so a documentation change deploys nothing. Every deploy also plans each
-service root, which holds only its release pins and secret versions, and so applies nothing.
+Markdown files never count. Neither do the workflows and actions that run OpenTofu: a change to them
+takes effect at the next deploy. A merge of only such files, or of the repository's other
+development files, starts no deploy at all; `deploy.yaml`'s `paths-ignore` lists them. Every deploy
+that starts also plans each service root, which holds only its release pins and secret versions,
+and so applies nothing.
 
 ```text
 changes ─► bootstrap ─┬─► foundation ─┬─► cluster ─► admission check

@@ -77,10 +77,11 @@ deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, w
    for a deletion or a downtime, so such an update waits for a maintainer. Anything else a bot
    opens, such as a major update, waits for a maintainer's or an admin's review like a person's.
    Repository admins can bypass these rules.
-4. **The deploy.** Each merge starts `deploy.yaml`. It applies each root that changed since the last
+4. **The deploy.** A merge starts `deploy.yaml`. It applies each root that changed since the last
    successful deploy: bootstrap, then foundation, then the cluster, Grafana and GitHub roots. It
    plans every service root too, which holds only pins. A release pin changes the cluster root,
-   which reads them. A deploy run by hand, or by `downtime.yaml`, applies every root.
+   which reads them. A deploy run by hand, or by `downtime.yaml`, applies every root. A merge that
+   changes only development files, such as workflows, docs or lint settings, starts no deploy.
 
 A daily **drift** check re-plans every root. It fails when the cloud differs from `master`, as after
 a change made in the console. It also fails when a repository's setting differs from what the

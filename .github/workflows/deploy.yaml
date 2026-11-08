@@ -1,13 +1,29 @@
 name: deploy
 
-# Every merge to master applies the roots it changed, and every service root, so
-# the services always run the current DOWNTIME. Service roots deploy in parallel,
-# so a change one service needs from another merges first, on its own.
+# A merge to master applies the roots it changed, and every service root, so the
+# services always run the current DOWNTIME. Service roots deploy in parallel, so
+# a change one service needs from another merges first, on its own.
+# A merge of only the files below starts no run: no root reads them. A run that
+# never starts cannot replace a waiting downtime deploy either.
 # A manual run applies every root, and so does the end of a downtime.yaml run,
 # which changes DOWNTIME. Disable this workflow to freeze production.
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "**.md"
+      - LICENSE
+      - renovate.json
+      - .dockerignore
+      - .gitignore
+      - .gitleaks.toml
+      - .golangci.yaml
+      - .prettierignore
+      - .tflint.hcl
+      - ".github/*"
+      - ".github/actions/**"
+      - ".github/workflows/**"
+      - ".github/scripts/*.test.mjs"
   workflow_dispatch:
   # A dispatch from downtime.yaml would run as github-actions[bot], which the
   # admin gate refuses. This run inherits the downtime run's triggering actor.
