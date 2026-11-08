@@ -94,7 +94,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.83.0
+      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.83.1
         with:
           config: .gitleaks.toml
           # renovate: datasource=github-releases depName=gitleaks/gitleaks
@@ -135,7 +135,7 @@ jobs:
         run: .github/scripts/check-service-roots.sh
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.83.0
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.83.1
         with:
           # renovate: datasource=custom.shellcheck depName=koalaman/shellcheck
           version: "0.11.0"
@@ -154,7 +154,7 @@ jobs:
           pyflakes: false
 
       - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.83.0
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.83.1
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d"
