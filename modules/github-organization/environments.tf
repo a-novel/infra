@@ -15,15 +15,21 @@ locals {
     }
   ]...)
 
-  # The default branch, plus release lines and version tags where the tags ruleset limits who creates
-  # them. A workflow on any other ref never unlocks an environment. Plan admits every ref, since its
-  # reviewers are its gate.
+  # The default branch, plus release lines, the next major's v<N> branch and version tags where the
+  # rulesets limit who creates them. A workflow on any other ref never unlocks an environment. Plan
+  # admits every ref, since its reviewers are its gate.
   deployment_policies = merge([
     for key, environment in local.environments : environment.environment == "plan" ? {} : {
       for policy in concat(
         [{ type = "branch", pattern = local.default_branch }],
-        var.repositories[environment.repository].tags_ruleset ? [{ type = "branch", pattern = "release/v*" }, { type = "tag", pattern = "v*" }] : [],
-      ) : "${key}:${policy.type}:${policy.pattern}" => merge(environment, policy, { key = key })
+        var.repositories[environment.repository].tags_ruleset ? [
+          { type = "branch", pattern = "release/v*" },
+          { type = "branch", pattern = "v${local.discovered[environment.repository].major + 1}" },
+          { type = "tag", pattern = "v*" },
+        ] : [],
+        # The next major's key omits its number, so a release moves that pattern in place: the sweep
+        # never deletes.
+      ) : "${key}:${policy.type}:${can(regex("^v[0-9]+$", policy.pattern)) ? "next-major" : policy.pattern}" => merge(environment, policy, { key = key })
     }
   ]...)
 }

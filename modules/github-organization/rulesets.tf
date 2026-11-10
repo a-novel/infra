@@ -35,7 +35,8 @@ locals {
       rules  = { creation = true, update = true, deletion = true, non_fast_forward = true, required_signatures = false }
       checks = false, merge_queue = false, pull_request = false, commit_message_pattern = false
     }
-    # release/vX.Y lines are governed like the default branch.
+    # release/vX.Y lines are governed like the default branch, and so is the v<N> branch of the next
+    # major, since its release workflow runs with the release App's key.
     release-lines = {
       target = "branch", include = ["refs/heads/release/**"], exclude = []
       bypass = ["admins", "release"]
@@ -101,9 +102,11 @@ resource "github_repository_ruleset" "this" {
 
   conditions {
     ref_name {
-      include = each.value.ruleset == "retired-lines" ? [
-        for major in range(local.discovered[each.value.repository].major) : "refs/heads/v${major}"
-      ] : local.ruleset_templates[each.value.ruleset].include
+      include = concat(
+        local.ruleset_templates[each.value.ruleset].include,
+        each.value.ruleset == "retired-lines" ? [for major in range(local.discovered[each.value.repository].major) : "refs/heads/v${major}"] : [],
+        each.value.ruleset == "release-lines" ? ["refs/heads/v${local.discovered[each.value.repository].major + 1}"] : [],
+      )
       exclude = local.ruleset_templates[each.value.ruleset].exclude
     }
   }
