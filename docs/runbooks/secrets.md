@@ -195,7 +195,7 @@ platform, named after it, without an expiry.
 
 Set a platform's token only once the GitHub root has applied its `sourcemaps` environment, which
 the platform's `release.yaml` names: the environment then admits only `master`, `release/v*`
-branches and `v*` tags. `gh` prompts for the value:
+branches, the next major's `v<N>` branch and `v*` tags. `gh` prompts for the value:
 
 ```bash
 gh secret set FARO_SOURCEMAP_API_KEY --env sourcemaps --repo a-novel/platform-studio

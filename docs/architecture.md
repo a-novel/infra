@@ -316,7 +316,7 @@ archives it.
 - **The code stays the source of truth.** Discovery reads each repository's default branch: the
   required checks are the always-required set plus `main.yaml`'s jobs, minus reporting and
   master-only ones; the secrets and environments come from every workflow; and the root
-  `package.json`'s major names the retired release lines. Each repository owns its workflows,
+  `package.json`'s major names the retired release lines and the next major's branch. Each repository owns its workflows,
   Renovate's updates included.
 - **A repository waits until it is ready.** Until its default branch holds `main.yaml`, it gets
   settings, team access and labels only. Readiness never depends on another workflow's name: each

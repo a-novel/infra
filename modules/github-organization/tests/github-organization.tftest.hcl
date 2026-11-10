@@ -188,8 +188,13 @@ run "derives_config_from_the_workflows" {
   }
 
   assert {
-    condition     = length([for key, policy in local.deployment_policies : key if startswith(key, "infra:")]) == 2 && length([for key, policy in local.deployment_policies : key if startswith(key, "service-genai:")]) == 6
-    error_message = "An environment opens on the default branch, plus release lines and version tags where the tags ruleset guards them."
+    condition     = length([for key, policy in local.deployment_policies : key if startswith(key, "infra:")]) == 2 && length([for key, policy in local.deployment_policies : key if startswith(key, "service-genai:")]) == 8
+    error_message = "An environment opens on the default branch, plus release lines, the next major's branch and version tags where the rulesets guard them."
+  }
+
+  assert {
+    condition     = local.deployment_policies["service-genai:release:branch:next-major"].pattern == "v1" && contains(github_repository_ruleset.this["service-genai:release-lines"].conditions[0].ref_name[0].include, "refs/heads/v1")
+    error_message = "The next major's branch reads the release key only because the release-lines ruleset guards it, under a key its number never moves, since the sweep never deletes."
   }
 
   assert {
