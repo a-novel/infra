@@ -18,7 +18,8 @@ locals {
     profile          = { service = "profile", pods = "rest", audience = local.profile_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
   }
   health_checks = { for name, target in local.health_check_targets : name => merge(target, {
-    image = "${target.service}/${target.pods}"
+    image    = "${target.service}/${target.pods}"
+    cron_job = name == target.service ? "health" : "health-${target.pods}"
     env = merge(target.env, local.downtime_env[target.service], {
       SERVICE_URL   = "https://${target.pods}.${target.service}.svc:${local.service_port}"
       SSL_CERT_FILE = "/etc/service-ca/ca.crt"
@@ -222,7 +223,7 @@ resource "kubernetes_cron_job_v1" "health" {
   for_each = var.custom_resources ? local.health_checks : {}
 
   metadata {
-    name      = each.key == each.value.service ? "health" : "health-${each.value.pods}"
+    name      = each.value.cron_job
     namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
   }
 
@@ -230,6 +231,10 @@ resource "kubernetes_cron_job_v1" "health" {
     schedule           = "*/5 * * * *"
     timezone           = "Etc/UTC"
     concurrency_policy = "Forbid"
+
+    # Kubernetes keeps the last failed run, and the CronJob the last successful one. Each kept run
+    # holds its pod and that pod's logs.
+    successful_jobs_history_limit = 1
 
     job_template {
       metadata {}

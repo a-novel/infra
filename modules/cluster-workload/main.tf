@@ -47,6 +47,10 @@ resource "kubernetes_deployment_v1" "workload" {
   spec {
     replicas = var.replicas.min
 
+    # A release only moves forward, so the Deployment deletes each ReplicaSet it replaces, and none
+    # of their series reach Grafana.
+    revision_history_limit = 0
+
     selector {
       match_labels = { "app.kubernetes.io/name" = var.name }
     }
