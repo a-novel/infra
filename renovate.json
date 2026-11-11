@@ -24,11 +24,10 @@
       "registryUrls": ["https://registry.opentofu.org"]
     },
     {
-      "description": "Review the stable Google provider and service-agent beta provider together.",
+      "description": "Move the stable Google provider and the service-agent beta provider together.",
       "matchManagers": ["terraform"],
       "matchPackageNames": ["hashicorp/google", "hashicorp/google-beta"],
-      "groupName": "Google providers",
-      "automerge": false
+      "groupName": "Google providers"
     },
     {
       "description": "Let the OpenTofu managers own required_version instead of treating it as HashiCorp Terraform.",
@@ -38,8 +37,7 @@
     {
       "description": "Keep the OpenTofu binary and root constraints on one version.",
       "matchPackageNames": ["opentofu/opentofu"],
-      "groupName": "OpenTofu",
-      "automerge": false
+      "groupName": "OpenTofu"
     },
     {
       "description": "Hold OpenTofu and provider releases for a week. Pull-request plans run the new binaries with the read-only production identity, and an update that merges on its own deploys them, so the release age bounds a compromised upstream release.",
@@ -53,11 +51,12 @@
       "minimumReleaseAge": "6 hours"
     },
     {
-      "description": "Hold the cluster add-ons' charts and images for a week, as provider releases are held, to bound a compromised upstream release.",
+      "description": "Hold the cluster add-ons' charts and images for a week, as provider releases are held, to bound a compromised upstream release. The datasources leave out the root's OpenTofu and provider pins, so they move with every other root's.",
       "matchFileNames": [
         "environments/production/cluster/**",
         "modules/database-operator/**"
       ],
+      "matchDatasources": ["docker", "helm"],
       "minimumReleaseAge": "7 days"
     },
     {

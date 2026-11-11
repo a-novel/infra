@@ -73,9 +73,10 @@ deploy:  bootstrap ─► foundation ─┬─► cluster: images, migrations, w
    approve their own pull request with `approve-pr.yaml`, which refuses anyone else's. A bot's pull
    request merges on its own only as a release pin, or as a version update Renovate itself put on
    auto-merge: the Agent App approves and queues it. Renovate puts every minor or patch update on
-   auto-merge except OpenTofu's and the Google providers'. Its plans still need a label
-   for a deletion or a downtime, so such an update waits for a maintainer. Anything else a bot
-   opens, such as a major update, waits for a maintainer's or an admin's review like a person's.
+   auto-merge. Its plans still need a label for a deletion or a downtime, and its Grafana and
+   GitHub plans a maintainer's admission, so such an update waits for a maintainer. Anything else
+   a bot opens, such as a major update, waits for a maintainer's or an admin's review like a
+   person's.
    Repository admins can bypass these rules.
 4. **The deploy.** A merge starts `deploy.yaml`. It applies each root that changed since the last
    successful deploy: bootstrap, then foundation, then the cluster, Grafana and GitHub roots. It
