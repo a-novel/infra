@@ -148,6 +148,17 @@ run "sends_every_signal_to_grafana_through_alloy" {
     error_message = "Alloy must scrape every 60 seconds, send the cluster's events, collect no log the services already send, run no Node Exporter, and drop CloudNativePG's settings."
   }
 
+  # Kubernetes names each run's Job after its CronJob and the minute the run was scheduled.
+  assert {
+    condition = (
+      local.alloy_values.clusterMetrics.cadvisor.extraMetricProcessingRules == local.health_run_rules &&
+      local.alloy_values.clusterMetrics["kube-state-metrics"].extraMetricProcessingRules == local.health_run_rules &&
+      alltrue([for cron in kubernetes_cron_job_v1.health : can(regex("^${local.health_run}$", "${cron.metadata[0].name}-29386080"))]) &&
+      !anytrue([for cron in kubernetes_cron_job_v1.scheduled : can(regex("^${local.health_run}$", "${cron.metadata[0].name}-29386080"))])
+    )
+    error_message = "Alloy must drop the series of every health check run, and of no other scheduled job's."
+  }
+
   assert {
     condition = alltrue([for scope in [
       local.alloy_values.clusterEvents.namespaces,
@@ -465,10 +476,11 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
       alltrue([for job in kubernetes_cron_job_v1.scheduled :
         job.spec[0].timezone == "Etc/UTC" &&
         job.spec[0].concurrency_policy == "Forbid" &&
+        job.spec[0].successful_jobs_history_limit == 1 &&
         job.spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
-    error_message = "Key rotation must run hourly at :10, the refresh token purge daily at 03:40 UTC and the authorization code purge at 03:50, one run at a time, never retried."
+    error_message = "Key rotation must run hourly at :10, the refresh token purge daily at 03:40 UTC and the authorization code purge at 03:50, one run at a time, never retried, keeping only the last successful run."
   }
 
   assert {
@@ -1123,10 +1135,11 @@ run "checks_each_service_as_a_caller_it_admits" {
         one(job.spec[0].template[0].spec[0].container).args == tolist(["-c", file("../../../modules/smoke-check/smoke.sh")]) &&
         kubernetes_cron_job_v1.health[name].spec[0].schedule == "*/5 * * * *" &&
         kubernetes_cron_job_v1.health[name].spec[0].concurrency_policy == "Forbid" &&
+        kubernetes_cron_job_v1.health[name].spec[0].successful_jobs_history_limit == 1 &&
         kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
-    error_message = "Each service API must get a smoke Job, which the deploy waits on, and a health CronJob of its own every five minutes, both running the shared check once per run."
+    error_message = "Each service API must get a smoke Job, which the deploy waits on, and a health CronJob of its own every five minutes keeping only its last successful run, both running the shared check once per run."
   }
 
   # Each Job's name follows what its pod runs, so a new image, script or setting runs it again.

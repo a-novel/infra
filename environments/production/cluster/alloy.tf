@@ -35,6 +35,24 @@ locals {
     digest     = split("@", local.image_parts[name].tag)[1]
   } }
 
+  # Each health check run (health-checks.tf) is a new Job and pod, named after its CronJob. Grafana
+  # bills a run's series for 20 minutes after the run ends. Alloy drops the series kube-state-metrics
+  # and cAdvisor give each run. The CronJob's own series still tell the scheduled-job rules each
+  # run's outcome, and the checked service's spans record each run's request.
+  health_run       = "(${join("|", distinct([for check in values(local.health_checks) : check.cron_job]))})-[0-9]+"
+  health_run_rules = <<-EOT
+    rule {
+      source_labels = ["job_name"]
+      regex         = "${local.health_run}"
+      action        = "drop"
+    }
+    rule {
+      source_labels = ["pod"]
+      regex         = "${local.health_run}-[a-z0-9]+"
+      action        = "drop"
+    }
+  EOT
+
   alloy_values = {
     cluster = { name = local.cluster.name }
     global  = { scrapeInterval = "60s" }
@@ -130,11 +148,17 @@ locals {
     # filesystems and network, which Pod Security's restricted level refuses. Beside the chart's
     # allowlist, each autoscaler's current metrics show whether it reads its pods' gauge.
     clusterMetrics = {
-      enabled            = true
-      collector          = "alloy"
-      destinations       = ["grafana-cloud"]
-      cadvisor           = { metricsTuning = { includeNamespaces = local.admitted_namespaces } }
-      kube-state-metrics = { metricsTuning = { includeMetrics = ["kube_horizontalpodautoscaler_status_target_metric"] } }
+      enabled      = true
+      collector    = "alloy"
+      destinations = ["grafana-cloud"]
+      cadvisor = {
+        metricsTuning              = { includeNamespaces = local.admitted_namespaces }
+        extraMetricProcessingRules = local.health_run_rules
+      }
+      kube-state-metrics = {
+        metricsTuning              = { includeMetrics = ["kube_horizontalpodautoscaler_status_target_metric"] }
+        extraMetricProcessingRules = local.health_run_rules
+      }
     }
 
     # The Kubernetes events. Pod logs stay off, since the workloads send their own.
@@ -159,7 +183,8 @@ locals {
       # Of the counter stores' series, which all start with redis_, Alloy keeps only those the first
       # rule marks: availability, uptime, memory, evicted and expired keys, clients, and httprate's
       # commands with their time. Of cert-manager's, it keeps only each certificate's expiry, which
-      # the second rule marks.
+      # the second rule marks. The scrape keeps each series' own labels, so a certificate's series
+      # carry the Certificate's namespace. The rules find cert-manager's series by their job.
       extraMetricProcessingRules = <<-EOT
         rule {
           source_labels = ["__name__", "cmd"]
@@ -168,8 +193,8 @@ locals {
           replacement   = "true"
         }
         rule {
-          source_labels = ["namespace", "__name__"]
-          regex         = "${local.namespace["cert-manager"]};certmanager_certificate_expiration_timestamp_seconds"
+          source_labels = ["job", "__name__"]
+          regex         = "cert-manager;certmanager_certificate_expiration_timestamp_seconds"
           target_label  = "__tmp_keep"
           replacement   = "true"
         }
@@ -179,8 +204,8 @@ locals {
           action        = "drop"
         }
         rule {
-          source_labels = ["namespace", "__tmp_keep"]
-          regex         = "${local.namespace["cert-manager"]};"
+          source_labels = ["job", "__tmp_keep"]
+          regex         = "cert-manager;"
           action        = "drop"
         }
         rule {

@@ -33,6 +33,11 @@ run "runs_unprivileged" {
   }
 
   assert {
+    condition     = one(kubernetes_deployment_v1.workload.spec).revision_history_limit == 0
+    error_message = "A Deployment must keep no ReplicaSet it replaced, since a release never rolls back."
+  }
+
+  assert {
     condition = (
       one(one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe).grpc).port == 8080 &&
       length(one(one(one(one(kubernetes_deployment_v1.workload.spec).template[0].spec).container).readiness_probe).http_get) == 0 &&

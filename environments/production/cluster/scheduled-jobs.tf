@@ -63,6 +63,10 @@ resource "kubernetes_cron_job_v1" "scheduled" {
     timezone           = "Etc/UTC"
     concurrency_policy = "Forbid"
 
+    # Kubernetes keeps the last failed run, and the CronJob the last successful one. Each kept run
+    # holds its pod and that pod's logs.
+    successful_jobs_history_limit = 1
+
     job_template {
       metadata {}
 
