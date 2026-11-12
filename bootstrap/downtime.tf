@@ -1,10 +1,10 @@
 # The planned downtime announcements run as Google Cloud Workflows executions, because GitHub
-# starts scheduled workflows hours late. This identity runs them: it reads the Discord webhook at
+# starts scheduled workflows hours late. This identity runs them: it reads the chat webhook at
 # posting time, so the URL lives only in Secret Manager.
 resource "google_service_account" "downtime_announcer" {
   account_id   = "downtime-announcer"
   display_name = "Planned downtime announcer"
-  description  = "Runs the downtime-announcements workflow: reads the Discord webhook and posts."
+  description  = "Runs the downtime-announcements workflow: reads the chat webhook and posts."
   project      = var.management_project_id
 
   depends_on = [google_project_service.management["iam.googleapis.com"]]
@@ -24,7 +24,7 @@ resource "google_service_account_iam_member" "downtime_announcer_deployer" {
   member             = "serviceAccount:${google_service_account.automation["foundation"].email}"
 }
 
-# sys.log reports a post Discord refused.
+# sys.log reports a post the chat refused.
 resource "google_project_iam_member" "downtime_announcer_logs" {
   project = var.management_project_id
   role    = "roles/logging.logWriter"
@@ -51,7 +51,7 @@ resource "google_project_iam_member" "workflows_agent" {
 resource "google_workflows_workflow" "downtime_announcements" {
   name            = "downtime-announcements"
   region          = var.region
-  description     = "Posts each step of a planned downtime to Discord at its time."
+  description     = "Posts each step of a planned downtime to the chat at its time."
   service_account = google_service_account.downtime_announcer.id
   source_contents = file("${path.module}/workflows/downtime-announcements.yaml")
 

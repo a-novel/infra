@@ -4,7 +4,7 @@
 import { appendFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// discord-post's palette (a-novel-kit/workflows) for the states these posts show.
+// chat-post's palette (a-novel-kit/workflows) for the states these posts show.
 const colors = {
   upcoming: 15844367,
   inProgress: 15105570,

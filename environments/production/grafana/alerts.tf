@@ -13,7 +13,7 @@ locals {
   # the duration of every other request.
   probes = "grpc.health.v1.Health/Check"
 
-  # Faults are filed by hand from Discord. Each span's fault type fires while it recurs, and a fault
+  # Faults are filed by hand from the chat. Each span's fault type fires while it recurs, and a fault
   # type the service has not raised for a week also fires as new. Transient failures count only
   # toward the failing share, and expected refusals toward nothing.
   service_rules = { for service, alert in var.alerts : service => [

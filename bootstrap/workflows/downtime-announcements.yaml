@@ -1,6 +1,6 @@
-# Posts each step of a planned downtime to Discord at its time. downtime.yaml cancels the previous
+# Posts each step of a planned downtime to the chat at its time. downtime.yaml cancels the previous
 # execution and starts one per change, listing the posts still due in time order:
-#   {"posts": [{"at": <unix seconds>, "message": <Discord webhook payload>}, ...]}
+#   {"posts": [{"at": <unix seconds>, "message": <chat webhook payload>}, ...]}
 # The webhook is read from Secret Manager at posting time, and calls are never logged.
 main:
   params: [args]
@@ -40,4 +40,4 @@ main:
                         call: sys.log
                         args:
                           severity: WARNING
-                          text: ${"Discord refused a planned downtime post (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}
+                          text: ${"The chat refused a planned downtime post (HTTP " + string(default(map.get(error, "code"), 0)) + ")."}

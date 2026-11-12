@@ -67,7 +67,7 @@ jobs:
           workload_identity_provider: ${{ matrix.root == 'environments/production/github' && vars.GCP_DRIFT_WORKLOAD_IDENTITY_PROVIDER || matrix.root == 'environments/production/grafana' && vars.GCP_REVIEWED_PLAN_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ matrix.root == 'environments/production/github' && vars.GCP_DRIFT_SERVICE_ACCOUNT || matrix.root == 'environments/production/grafana' && vars.GCP_REVIEWED_PLAN_SERVICE_ACCOUNT || vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
-      # The warning reaches the daily CI warnings digest on Discord.
+      # The warning reaches the daily CI warnings digest in the chat.
       - if: steps.tofu.outputs.changes == 'true'
         shell: bash
         env:

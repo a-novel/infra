@@ -34,7 +34,7 @@ run "routes_every_alert_to_discord" {
       length(grafana_notification_policy.discord.policy) == 0 &&
       alltrue(flatten([for group in grafana_rule_group.alerts : [for rule in group.rule : length(rule.notification_settings) == 0]]))
     )
-    error_message = "Every alert must reach the Discord contact point: no nested policy or rule-level routing may divert one."
+    error_message = "Every alert must reach the chat's contact point: no nested policy or rule-level routing may divert one."
   }
 
   assert {

@@ -163,7 +163,7 @@ jobs:
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
       - name: Announce the deploy
         if: steps.changes.outputs.deploys == 'true'
-        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.86.0
+        uses: a-novel-kit/workflows/generic-actions/chat-post@v1.86.0
         with:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           color: started
@@ -443,7 +443,7 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           SERVICES: ${{ needs.changes.outputs.services }}
-          ROLES: ${{ vars.DISCORD_REPO_ROLES }}
+          ROLES: ${{ vars.CHAT_REPO_ROLES }}
           COMMIT: ${{ needs.changes.outputs.commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -466,7 +466,7 @@ jobs:
           delimiter="EOF_$(openssl rand -hex 8)"
           { echo "outcome=$outcome"; echo "roles=$roles"; printf 'description<<%s\n%s\n%s\n' "$delimiter" "$description" "$delimiter"; } >>"$GITHUB_OUTPUT"
       - name: Post the outcome
-        uses: a-novel-kit/workflows/generic-actions/discord-post@v1.86.0
+        uses: a-novel-kit/workflows/generic-actions/chat-post@v1.86.0
         with:
           webhook: ${{ secrets.DEPLOY_WEBHOOK }}
           color: ${{ steps.outcome.outputs.outcome }}
