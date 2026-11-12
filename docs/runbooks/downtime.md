@@ -31,7 +31,7 @@ read it:
   listing that service has started, and the deploy applies it only then. GKE holds every cluster
   upgrade from `start` to `end`.
 
-Users also read the downtime in the public `a-novel-planned-downtime` Discord channel. Each
+Users also read the downtime in the public `planned-downtime` Fluxer channel. Each
 `downtime.yaml` run hands the `downtime-announcements` Cloud Workflow, in the management project,
 every post the downtime still needs:
 

@@ -293,7 +293,7 @@ that namespace's `secrets` identity, which reads only its own service's secrets.
 | `a-novel-cluster-nodes`                                      | The cluster's nodes: GKE's default node role alone, to write their logs and metrics and pull images.                                                                                               |
 | Kubernetes service accounts                                  | Each workload runs as its own account in its namespace, such as `rest` or `smoke`. `database` writes its Barman bucket, and `secrets` reads its service's secrets, both through Workload Identity. |
 | `<slug>-visual-ci`, `<slug>-visual-maintenance` (management) | The CI of platform-account, platform-studio, platform-template and a-novel-kit/uikit: visual-test evidence in Google Drive, no Cloud Storage access.                                               |
-| `downtime-announcer` (management)                            | Runs the planned downtime announcements; reads only the Discord webhook.                                                                                                                           |
+| `downtime-announcer` (management)                            | Runs the planned downtime announcements; reads only the Fluxer webhook.                                                                                                                            |
 | `github-dispatcher`, `github-dispatch-clock` (management)    | The timed workflows' clock: starts the dispatcher, which reads only the dispatch tokens.                                                                                                           |
 
 Data Access audit logs are on in the management project for IAM, Secret Manager, Cloud Storage and
@@ -370,11 +370,11 @@ archives it.
 
 - **Grafana** receives every signal from the cluster, through Alloy. The Grafana root,
   `environments/production/grafana`, holds its alert rules and dashboards, and its notification
-  policy posts every alert to the Discord contact point, which core creates by hand so its webhook
-  never reaches state. [Grafana alerts](runbooks/alerts.md#grafana-alerts) gives each rule. The root
-  applies only when it changes, in `deploy.yaml`'s own `grafana` job, which no release waits on.
-  That job runs in its own environment and identity, `grafana` and `infra-grafana`, apart from
-  Google Cloud's production.
+  policy posts every alert to Fluxer through the `discord` contact point, which core creates by
+  hand so its webhook never reaches state. [Grafana alerts](runbooks/alerts.md#grafana-alerts)
+  gives each rule. The root applies only when it changes, in `deploy.yaml`'s own `grafana` job,
+  which no release waits on. That job runs in its own environment and identity, `grafana` and
+  `infra-grafana`, apart from Google Cloud's production.
 - **Health checks** run in the cluster: each new image's `smoke-<hash>` Job, which the deploy waits
   on, and each service's `health` CronJobs, every five minutes. Grafana's `Scheduled job failing`
   reports a failed run, as [Health checks](runbooks/alerts.md#health-checks) details.
