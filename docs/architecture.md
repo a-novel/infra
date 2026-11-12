@@ -6,10 +6,10 @@ backups in the management project.
 
 ## Projects
 
-| Project                   | Holds                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------ |
-| `a-novel-management-prod` | State bucket, backup buckets, secrets, CI identities, Cloud Workflows. Survives a rebuild. |
-| `a-novel-production-prod` | The network, the cluster, its image repositories and the platforms' public edges.          |
+| Project                   | Holds                                                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `a-novel-management-prod` | State bucket, backup buckets, secrets, CI identities, Cloud Workflows, billing export. Survives a rebuild. |
+| `a-novel-production-prod` | The network, the cluster, its image repositories and the platforms' public edges.                          |
 
 Services keep apart inside the cluster, each in its own namespace, as [Cluster](#cluster) describes.
 

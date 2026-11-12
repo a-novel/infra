@@ -129,6 +129,23 @@ for identity in infra-foundation infra-plan; do
 done
 ```
 
+## Billing export
+
+Cloud Billing exports the billing account's cost data to bootstrap's `billing_export` dataset. No
+API turns the export on, so an operator who is also a Billing Account Administrator does it once,
+after bootstrap created the dataset:
+
+1. Open the [Billing export](https://console.cloud.google.com/billing/01BDFE-5B21E7-8393CB/export)
+   page, on its **BigQuery export** tab.
+2. Click **Enable detailed export**. Detailed usage cost holds every row of the standard export,
+   plus each resource's cost.
+3. Pick `a-novel-management-prod` under **Projects** and `billing_export` under **Dataset ID**, then
+   click **Save**.
+
+Billing backfills from the start of the previous month, and adds its service account to the
+dataset's access list. A rebuilt management project needs the export moved to its new dataset:
+disable the export, then enable it again there.
+
 ## Rebuild from nothing
 
 Use this only if the management project is gone, since it holds the state, the CI identities, the
