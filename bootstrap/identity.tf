@@ -10,6 +10,8 @@ locals {
   ])
 
   foundation_project_roles = toset([
+    # Creating a dataset takes a project-level role.
+    "roles/bigquery.dataOwner",
     "roles/cloudscheduler.admin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
@@ -22,10 +24,11 @@ locals {
   ])
 
   # Data Access audit entries are private logs. Human operators need the
-  # private viewer role to investigate state and secret operations.
+  # private viewer role to investigate state and secret operations. Turning on
+  # and querying the billing export takes BigQuery User.
   operator_project_roles = setunion(
     local.foundation_project_roles,
-    toset(["roles/logging.privateLogViewer"]),
+    toset(["roles/bigquery.user", "roles/logging.privateLogViewer"]),
   )
 
   automation_project_bindings = merge(
@@ -191,14 +194,15 @@ resource "google_project_iam_custom_role" "secret_metadata" {
 }
 
 # Security Reviewer includes private logs and broad inventory access. Planning
-# needs only the policy and bucket metadata required to refresh this root.
+# needs only the policy, bucket and dataset metadata required to refresh this root.
 resource "google_project_iam_custom_role" "plan_metadata" {
   role_id     = "infraPlanMetadataViewer"
   title       = "Infra Plan Metadata Viewer"
-  description = "Read project IAM and Cloud Storage control-plane metadata without reading non-state objects or logs."
+  description = "Read project IAM, Cloud Storage and BigQuery dataset control-plane metadata without reading non-state objects, tables or logs."
   stage       = "GA"
 
   permissions = [
+    "bigquery.datasets.get",
     "resourcemanager.projects.get",
     "resourcemanager.projects.getIamPolicy",
     "storage.buckets.get",

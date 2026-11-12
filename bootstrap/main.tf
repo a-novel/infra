@@ -25,6 +25,7 @@ locals {
 
   required_services = toset([
     "accesscontextmanager.googleapis.com",
+    "bigquery.googleapis.com",
     "billingbudgets.googleapis.com",
     "cloudbilling.googleapis.com",
     "cloudscheduler.googleapis.com",

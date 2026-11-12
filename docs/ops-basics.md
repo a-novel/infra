@@ -112,7 +112,8 @@ of the `plan` environment admits its run. `infra-plan` reads:
 
 - **every root's state**, which holds no secret value;
 - **in the management project**, the configuration of IAM, service accounts, Workload Identity,
-  Cloud Scheduler, Workflows, the enabled APIs, the buckets and the secrets, never a secret's value;
+  Cloud Scheduler, Workflows, the enabled APIs, the buckets, the BigQuery datasets and the secrets,
+  never a secret's value or a table's rows;
 - **in the workload project**, the configuration of every resource foundation manages, through
   foundation's `plan_project_roles`, but no log entry or trace, which an organization deny policy
   refuses. On the cluster, it reads every object but Secrets, and never the pods' logs;
@@ -125,8 +126,9 @@ Grafana root manages, but no data source, and both organizations' repository con
 Human operators are the members of bootstrap's `operator_principals` and foundation's
 `database_operator_principals`. They hold three sets of roles:
 
-- **in the management project**, the administration of IAM, Cloud Scheduler, Workflows and the
-  management buckets, private audit logs, and the right to add and read versions of every secret;
+- **in the management project**, the administration of IAM, Cloud Scheduler, Workflows, the
+  management buckets and the BigQuery datasets, private audit logs, the right to run BigQuery
+  queries, and the right to add and read versions of every secret;
 - **in the workload project**, read access to the cluster, the compute resources, the logs and the
   alert policies;
 - **on the cluster**, read access to each service's namespace: its pods and their logs, events and
