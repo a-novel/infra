@@ -84,7 +84,7 @@ each one in the browser, in
   `.github` repository included, and for `a-novel`, `infra`, whose sweep and drift check it starts.
 - **Permissions:** Actions, read and write. Nothing else.
 - **Expiration:** the longest the org allows. The `.github` repository's daily `token-expiry`
-  workflow posts to Discord before it lapses.
+  workflow posts to Fluxer before it lapses.
 
 Add each one as a version of `production-github-dispatch-<org>`, as in
 [Rotate a secret](#rotate-a-secret), and pin it in bootstrap's `github_dispatch_token_versions`. The
@@ -111,7 +111,7 @@ accounts**:
 The deploy account is an Admin because Grafana caches each identity's folder permissions: an
 Editor that creates a folder cannot read it back for a moment, which leaves the folder tainted.
 Give neither account `alert.provisioning.secrets:read`, which **Read via Provisioning API + Export
-Secrets** grants: it hands the Discord contact point's webhook to pull-request code.
+Secrets** grants: it hands the `discord` contact point's webhook to pull-request code.
 
 The plan account reads what the Grafana root manages and queries no data source, so its token
 reads no log, trace or metric. Its custom role grants the folders, the dashboards and the alerting
@@ -151,9 +151,11 @@ expiry, under the account's **Add service account token**, and replace it every 
 or leaked copy lapses on its own. The deploy token, which only master's deploy reads, has none. For
 a leak, delete the token in Grafana as well as disabling its version.
 
-Grafana's Discord contact point is created by hand in the same stack, so its webhook never reaches
-state. Its title and message call the Grafana root's templates, as
-[Grafana alerts](alerts.md#grafana-alerts) shows.
+Grafana's `discord` contact point is created by hand in the same stack, so its webhook never reaches
+state. It uses Grafana's **Discord** integration with a Fluxer webhook URL, since Fluxer takes
+Discord's format. Its title and message call the Grafana root's templates, as
+[Grafana alerts](alerts.md#grafana-alerts) shows. If Fluxer refuses its posts, Grafana's **Slack**
+integration takes the same URL with `/slack` appended.
 
 ## Grafana Cloud tokens
 

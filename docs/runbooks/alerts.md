@@ -2,10 +2,10 @@
 
 This runbook is about what to do when an alert fires or a scheduled check fails.
 
-Grafana posts every alert to Discord, as [Grafana alerts](#grafana-alerts) describes. Google
+Grafana posts every alert to Fluxer, as [Grafana alerts](#grafana-alerts) describes. Google
 emails the budget alerts to both the cost and the operations addresses.
 
-Deploys post to the `a-novel-deployments` Discord channel when they start and when they end. A
+Deploys post to the `a-novel-deployments` Fluxer channel when they start and when they end. A
 deploy posts only when it changes a root, or when it fails. A failure pings the `a-novel/infra` role
 and the failed service's role, whoever triggered the deploy. GitHub emails failed `drift` runs to
 whoever last edited its schedule.
@@ -13,7 +13,7 @@ whoever last edited its schedule.
 ## Grafana alerts
 
 Grafana evaluates the cluster's alerts every minute. Its notification policy posts each one to
-Discord through the hand-made `discord` contact point when it fires, every four hours while it
+Fluxer through the hand-made `discord` contact point when it fires, every four hours while it
 fires, and when it resolves. The rules sit in the stack's **Production** folder: one rule group per
 service, plus `capacity`, `data`, `jobs`, `platform`, `rate-limits` and `usage`. Their thresholds
 are the Grafana root's `alerts` and `thresholds` inputs.
@@ -79,7 +79,7 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
 | `<service>: rate limits counted…`    | the service counted requests in its pods for 5 minutes while its counter store answered           |
 | `<service>: counters evicted`        | the service's counter store evicted a counter in the last hour                                    |
 
-- **A fault** is filed by hand, from its Discord post, as an issue in the service's repository. On
+- **A fault** is filed by hand, from its Fluxer post, as an issue in the service's repository. On
   the Errors dashboard, its operation opens its traces and its service opens its error logs.
 - **A `DatasourceError`:** the rule's query failed for its whole pending period, a minute at least.
   Several rules at once, with `received an unexpected error from the datasource`, point at Grafana

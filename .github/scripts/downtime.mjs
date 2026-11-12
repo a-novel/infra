@@ -1,4 +1,4 @@
-// The planned downtime: the window downtime.yaml builds from its inputs, the Discord posts it hands
+// The planned downtime: the window downtime.yaml builds from its inputs, the Fluxer posts it hands
 // to Google Cloud Workflows, and whether it has started for a component, which gates PostgreSQL
 // major upgrades. All are pure functions of their inputs and the clock.
 import { appendFileSync, readdirSync } from "node:fs";
@@ -156,7 +156,7 @@ function post(at, title, color, window, headline) {
 
 /**
  * Every post a change from previous to window needs, in time order: the change itself now, then the
- * reminders still ahead. The countdowns are Discord timestamps, so a post written now still reads
+ * reminders still ahead. The countdowns are Fluxer timestamps, so a post written now still reads
  * right when it lands. Either side may be null.
  */
 export function planAnnouncements({ previous, window, now }) {
