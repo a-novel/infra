@@ -34,6 +34,15 @@ run "protects_state_and_backups" {
     error_message = "State and backup buckets must be private, uniformly controlled and never force-destroyed."
   }
 
+  # Billing never exports a deleted row again.
+  assert {
+    condition = (
+      google_bigquery_dataset.billing_export.default_table_expiration_ms == null &&
+      google_bigquery_dataset.billing_export.default_partition_expiration_ms == null
+    )
+    error_message = "The billing export's tables and partitions never expire."
+  }
+
   # Expiry would delete the backups of the lineage the cluster's databases archive to now.
   assert {
     condition = alltrue([for bucket in values(google_storage_bucket.barman) :
