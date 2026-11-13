@@ -62,7 +62,7 @@ resource "grafana_folder" "production" {
   title = "Production"
 }
 
-# Every alert posts to the Discord contact point, which core creates by hand so its webhook never
+# Every alert posts to the chat's contact point, which core creates by hand so its webhook never
 # reaches the state. A firing alert posts again every four hours.
 resource "grafana_notification_policy" "discord" {
   contact_point = var.contact_point

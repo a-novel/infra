@@ -214,7 +214,7 @@ run "trusts_only_reviewed_workflows" {
     condition = alltrue([for workflow in [google_workflows_workflow.downtime_announcements, google_workflows_workflow.github_dispatch] :
       workflow.call_log_level == "LOG_NONE" && workflow.execution_history_level == "EXECUTION_HISTORY_BASIC"
     ])
-    error_message = "Call logs and detailed history would record the secrets the workflows read: the Discord webhook and the GitHub dispatch tokens."
+    error_message = "Call logs and detailed history would record the secrets the workflows read: the chat webhook and the GitHub dispatch tokens."
   }
 
   # Only uikit's visual tests trust a repository outside the a-novel organization.

@@ -13,7 +13,7 @@ locals {
   github_governance_secrets = {
     AGENT_BOT_PRIVATE_KEY      = "Private key of the organization's Agent App"
     DEPENDENCY_BOT_PRIVATE_KEY = "Private key of the organization's Dependencies App"
-    BWS_READ_TOKEN             = "Bitwarden token with which notify.yaml maps GitHub accounts to Discord users"
+    BWS_READ_TOKEN             = "Bitwarden token with which notify.yaml maps GitHub accounts to chat users"
   }
 
   github_root_secrets = merge(

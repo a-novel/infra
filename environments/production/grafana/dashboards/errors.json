@@ -152,7 +152,7 @@
       "id": 6,
       "type": "alertlist",
       "title": "Firing alerts",
-      "description": "The Production folder's alerts that fire or are about to. Each also posts to Discord.",
+      "description": "The Production folder's alerts that fire or are about to. Each also posts to the chat.",
       "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
       "options": {
         "viewMode": "list",

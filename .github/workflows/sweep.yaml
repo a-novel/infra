@@ -91,7 +91,7 @@ jobs:
         shell: bash
         run: node .github/scripts/repository-asserts.mjs "$RUNNER_TEMP/organizations.json" --apply
       # Until a pull request fixes it, each sweep fails again; the warning reaches the daily CI
-      # warnings digest on Discord.
+      # warnings digest in the chat.
       - if: failure()
         shell: bash
         run: echo "::warning::The sweep could not apply the GitHub root; see this run's log."

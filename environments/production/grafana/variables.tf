@@ -50,7 +50,7 @@ variable "writer" {
 }
 
 variable "contact_point" {
-  description = "Name of the Discord contact point, which core creates by hand in the stack."
+  description = "Name of the chat's contact point, which core creates by hand in the stack."
   type        = string
 }
 

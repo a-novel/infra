@@ -136,8 +136,8 @@ locals {
       purpose  = "GenAI OpenAI API key, restricted to the Responses endpoints"
     }
     production-downtime-discord-webhook = {
-      contract = "DISCORD_WEBHOOK"
-      purpose  = "Discord webhook of the public planned downtime channel"
+      contract = "CHAT_WEBHOOK"
+      purpose  = "Chat webhook of the public planned downtime channel"
     }
     production-github-dispatch-a-novel = {
       contract = "GITHUB_TOKEN"
