@@ -24,7 +24,7 @@ mock_provider "github" {
   #       environment: release
   #     report-coverage:
   #       runs-on: ubuntu-24.04
-  #       environment: plan
+  #       environment: ${{ github.actor != vars.BOT && 'plan' || '' }}
   #     publish:
   #       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
   #       runs-on: ubuntu-24.04
@@ -36,7 +36,7 @@ mock_provider "github" {
     defaults = {
       code = 200
       body = <<-EOT
-        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICAgIGVudmlyb25tZW50OiBwbGFuCiAgcHVibGlzaDoKICAgIGlmOiBnaXRo\ndWIuZXZlbnRfbmFtZSA9PSAncHVzaCcgJiYgZ2l0aHViLnJlZiA9PSAncmVm\ncy9oZWFkcy9tYXN0ZXInCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAg\nIGVudmlyb25tZW50OgogICAgICBuYW1lOiBnb3Zlcm5hbmNlCiAgICBzdGVw\nczoKICAgICAgLSBydW46IHNpZ24gIiR7eyBzZWNyZXRzLkFHRU5UX0JPVF9Q\nUklWQVRFX0tFWSB9fSIK\n", "encoding": "base64"}
+        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICAgIGVudmlyb25tZW50OiAke3sgZ2l0aHViLmFjdG9yICE9IHZhcnMuQk9U\nICYmICdwbGFuJyB8fCAnJyB9fQogIHB1Ymxpc2g6CiAgICBpZjogZ2l0aHVi\nLmV2ZW50X25hbWUgPT0gJ3B1c2gnICYmIGdpdGh1Yi5yZWYgPT0gJ3JlZnMv\naGVhZHMvbWFzdGVyJwogICAgcnVucy1vbjogdWJ1bnR1LTI0LjA0CiAgICBl\nbnZpcm9ubWVudDoKICAgICAgbmFtZTogZ292ZXJuYW5jZQogICAgc3RlcHM6\nCiAgICAgIC0gcnVuOiBzaWduICIke3sgc2VjcmV0cy5BR0VOVF9CT1RfUFJJ\nVkFURV9LRVkgfX0iCg==\n", "encoding": "base64"}
       EOT
     }
   }
@@ -145,7 +145,7 @@ run "derives_config_from_the_workflows" {
 
   assert {
     condition     = local.discovered["service-genai"].environments == toset(["release", "plan", "governance"])
-    error_message = "A job names its environment directly or as the name of an environment map."
+    error_message = "A job names its environment directly, as the name of an environment map, or quoted in an expression."
   }
 
   assert {

@@ -67,13 +67,15 @@ locals {
 
   # A boundary that names a workflow for pull requests also trusts that workflow on this
   # repository's pull requests into master, in the environment whose reviewers admit each run when it
-  # names one.
+  # names one. A run the Dependencies App raised needs no reviewer. No contributor can act as that
+  # App, and it commits only what Renovate and the master workflows write, which the deploy applies
+  # anyway once the auto-approver merges it.
   pull_request_clauses = {
     for boundary, trust in local.trust_boundaries : boundary => trust.pull_requests == null ? [] : [join(" && ", compact([
       "assertion.event_name == 'pull_request'",
       "assertion.base_ref == 'master'",
       "assertion.workflow_ref.startsWith('${local.github.repository}/.github/workflows/${trust.pull_requests.workflow}@refs/pull/')",
-      trust.pull_requests.environment == null ? "" : "assertion.environment == '${trust.pull_requests.environment}'",
+      trust.pull_requests.environment == null ? "" : "(assertion.environment == '${trust.pull_requests.environment}' || assertion.actor_id == '${local.github.dependency_bot_id}')",
     ]))]
   }
 }
@@ -117,7 +119,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = each.value.provider_id
   display_name                       = each.value.display_name
-  description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests${each.value.pull_requests.environment == null ? "" : " in ${each.value.pull_requests.environment}"}"}."
+  description                        = "Trusts only ${local.github.repository} ${join(", ", keys(each.value.workflows))} on master${each.value.pull_requests == null ? "" : " and its own pull requests${each.value.pull_requests.environment == null ? "" : " in ${each.value.pull_requests.environment} or from the Dependencies App"}"}."
   disabled                           = false
   deletion_policy                    = "PREVENT"
 

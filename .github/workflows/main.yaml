@@ -197,9 +197,10 @@ jobs:
 
   # Each root's plan is its own required check. GitHub issues no OIDC token to
   # fork pull requests, so their plans fail until a maintainer pushes the branch.
-  # The Grafana and GitHub roots read a third party's credentials, so their plans
-  # wait in the plan environment until a maintainer, an owner or an admin admits
-  # the run.
+  # The Grafana and GitHub roots read a third party's credentials, so a person's
+  # run of their plans waits in the plan environment until a maintainer, an owner
+  # or an admin admits it. A run the Dependencies App raised plans at once, since
+  # the reviewed plan identity trusts that App's events without the environment.
   plan-bootstrap:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -419,9 +420,9 @@ jobs:
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
-  # The Grafana and GitHub plans wait for a reviewer, so they run only when the merge would apply
-  # their root: when the pull request changes what the root depends on, or, for GitHub, carries the
-  # deletion label, which makes the deploy prune. Any other pull request skips them.
+  # A person's Grafana and GitHub plans wait for a reviewer, so they run only when the merge would
+  # apply their root: when the pull request changes what the root depends on, or, for GitHub, carries
+  # the deletion label, which makes the deploy prune. Any other pull request skips them.
   plan-scope:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -453,7 +454,7 @@ jobs:
   plan-grafana:
     needs: plan-scope
     if: github.event_name == 'pull_request' && needs.plan-scope.outputs.grafana == 'true'
-    environment: plan
+    environment: ${{ github.actor != vars.DEPENDENCY_BOT_LOGIN && 'plan' || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -479,7 +480,7 @@ jobs:
   plan-github:
     needs: plan-scope
     if: github.event_name == 'pull_request' && needs.plan-scope.outputs.github == 'true'
-    environment: plan
+    environment: ${{ github.actor != vars.DEPENDENCY_BOT_LOGIN && 'plan' || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

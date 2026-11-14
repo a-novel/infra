@@ -80,10 +80,14 @@ locals {
         if startswith(key, "${name}:")
       ]))
 
-      # A job names its environment directly or as the name of an environment map.
+      # A job names its environment directly or as the name of an environment map. An expression
+      # names each environment it quotes, as `github.actor != vars.BOT && 'plan' || ''` names plan.
       environments = toset(flatten([
         for key, workflow in local.workflows : [
-          for job in values(try(workflow.jobs, {})) : try(tostring(job.environment), tostring(job.environment.name))
+          for job in values(try(workflow.jobs, {})) : [
+            for environment in [try(tostring(job.environment), tostring(job.environment.name))] :
+            startswith(environment, "$${{") ? compact(flatten(regexall("'([^']*)'", environment))) : [environment]
+          ]
           if can(tostring(job.environment)) || can(tostring(job.environment.name))
         ]
         if startswith(key, "${name}:")

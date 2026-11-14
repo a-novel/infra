@@ -49,13 +49,16 @@ locals {
     repository    = "a-novel/infra"
     repository_id = "1344262359"
     ref           = "refs/heads/master"
+    # The Dependencies App's bot user, the actor of each event that Renovate, the release pins and
+    # the Google ranges refresh raise.
+    dependency_bot_id = "224309757"
   }
 
   # Each boundary trusts exact master workflows, keyed to the GitHub
   # environment they must run in (null for none). The two plan boundaries also
   # trust this repository's pull requests, the reviewed one only once a reviewer
-  # of the plan environment admits the run; GitHub never issues OIDC tokens to
-  # fork pull requests.
+  # of the plan environment admits the run, or when the Dependencies App raised
+  # it; GitHub never issues OIDC tokens to fork pull requests.
   trust_boundaries = {
     plan = {
       service_account_id = "infra-plan"
@@ -64,8 +67,8 @@ locals {
       workflows          = { "drift.yaml" = null }
       pull_requests      = { workflow = "main.yaml", environment = null }
     }
-    # Plans the roots that read a third party's credentials, Grafana's and GitHub's, so a pull
-    # request reaches those only once a reviewer admits its run.
+    # Plans the roots that read a third party's credentials, Grafana's and GitHub's, so a person's
+    # pull request reaches those only once a reviewer admits its run.
     reviewed_plan = {
       service_account_id = "infra-reviewed-plan"
       display_name       = "Infra reviewed plans"
