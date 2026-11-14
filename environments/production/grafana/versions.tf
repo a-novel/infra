@@ -15,7 +15,7 @@ terraform {
     # Grafana Labs' own provider covers the stack's alerting, dashboards and Frontend Observability.
     grafana = {
       source  = "grafana/grafana"
-      version = "4.53.0"
+      version = "4.54.0"
     }
     # Its decode_tfvars reads foundation's node pool.
     terraform = {
