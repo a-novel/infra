@@ -1,6 +1,7 @@
 # Pull requests plan the Grafana and GitHub roots as infra-reviewed-plan, the only plan identity that
-# reads a third party's credential: the Grafana plan tokens and the GitHub Plan App keys. A pull
-# request mints it only once a reviewer of the plan environment admits its run.
+# reads a third party's credential: the Grafana plan tokens and the GitHub Plan App keys. A person's
+# pull request mints it only once a reviewer of the plan environment admits its run; the Dependencies
+# App's mint it at once.
 locals {
   reviewed_plan_secrets = toset(concat(
     ["production-grafana-plan-token", "production-grafana-cloud-plan-token"],

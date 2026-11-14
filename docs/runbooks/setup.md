@@ -61,8 +61,8 @@ root's deploys apply from it, apart from Google Cloud's production:
 | `GCP_GRAFANA_WORKLOAD_IDENTITY_PROVIDER` | `…/providers/github-grafana`                                    |
 | `GCP_GRAFANA_SERVICE_ACCOUNT`            | `infra-grafana@a-novel-management-prod.iam.gserviceaccount.com` |
 
-Environment `plan` holds a pull request's Grafana and GitHub plans until a reviewer admits the run,
-since they read those roots' credentials as `infra-reviewed-plan`. The GitHub root creates it
+Environment `plan` holds a person's Grafana and GitHub plans until a reviewer admits the run, since
+they read those roots' credentials as `infra-reviewed-plan`. The Dependencies App's runs skip it. The GitHub root creates it
 because `main.yaml` names it, with infra's maintainers, owners and the admin team as reviewers, on
 every branch. Its jobs read the repository variables `GCP_REVIEWED_PLAN_WORKLOAD_IDENTITY_PROVIDER`
 (`…/providers/github-reviewed-plan`) and `GCP_REVIEWED_PLAN_SERVICE_ACCOUNT`
