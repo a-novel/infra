@@ -38,7 +38,7 @@ resource "helm_release" "plugin_barman_cloud" {
   namespace  = var.namespaces.cloudnative_pg
   repository = "https://cloudnative-pg.github.io/charts"
   chart      = "plugin-barman-cloud"
-  version    = "0.8.1"
+  version    = "0.9.0"
 
   values = [yamlencode({
     for key, image in { image = var.images.plugin_barman_cloud, sidecarImage = var.images.plugin_barman_cloud_sidecar } : key => {
