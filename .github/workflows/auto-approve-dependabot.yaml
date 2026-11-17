@@ -39,16 +39,51 @@ on:
     branches: ["dependabot/**"]
 
 jobs:
-  # A release pin labeled breaking-release waits for a maintainer, whom pin-release.mjs requests.
-  auto-approve:
+  # A release pin labeled breaking-release waits for a maintainer, whom pin-release.mjs requests. The
+  # label lands in a second request after the pull request opens, and a `status` event carries no
+  # pull request, so the hold reads the pull request's live labels instead of the event's. Without
+  # a resolved pull request, or with a failed read, nothing is approved.
+  hold:
     if: >-
       github.actor != vars.DEPENDABOT_SECURITY_LOGIN &&
-      !contains(github.event.pull_request.labels.*.name, 'breaking-release') &&
       (github.event.action != 'auto_merge_enabled' || github.event.sender.login == vars.DEPENDENCY_BOT_LOGIN) &&
       (github.event.pull_request.user.login == vars.DEPENDENCY_BOT_LOGIN ||
        github.event.pull_request.user.login == vars.DEPENDABOT_SECURITY_LOGIN ||
        (github.event_name == 'status' && github.event.context == 'renovate/stability-days' &&
         github.event.state == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      approvable: ${{ steps.labels.outputs.approvable }}
+    steps:
+      - name: Read the pull request's live labels
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha || github.event.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [ -z "$PR" ]; then
+            PR=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+              --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")
+          fi
+          if [ -z "$PR" ]; then
+            echo "::notice::No open pull request has head ${SHA:0:12}; nothing to approve."
+            exit 0
+          fi
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels?per_page=100" --jq '.[].name')
+          if grep -qx breaking-release <<<"$labels"; then
+            echo "::notice::#$PR is labeled breaking-release; a maintainer approves it."
+            exit 0
+          fi
+          echo "approvable=true" >>"$GITHUB_OUTPUT"
+
+  auto-approve:
+    needs: [hold]
+    if: needs.hold.outputs.approvable == 'true'
     # The callee mints a scoped App token for every write. The default token makes the reads the
     # App cannot: the release age, and each first-party version's attestation and npm tarball with
     # the diff they belong to. The caller grants only those reads.
