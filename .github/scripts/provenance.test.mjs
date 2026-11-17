@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { describe, it } from "node:test";
 
-import { checks } from "./provenance.mjs";
+import { attestationArgs, checks } from "./provenance.mjs";
 
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
 const grpc = (tag, letter) =>
@@ -108,5 +109,90 @@ describe("checks", () => {
       checks(plan([grpc("v2.10.4", "a")], [copy(grpc("v2.10.4", "e"))])).length,
       1,
     );
+  });
+});
+
+describe("attestationArgs", () => {
+  const flag = (args, name) => args[args.indexOf(name) + 1];
+
+  it("admits a release tag's own release.yaml or main.yaml run, and no other signer", () => {
+    const args = attestationArgs(
+      checks(plan([], [copy(grpc("v2.10.4", "a"))]))[0],
+    );
+    const signer = new RegExp(flag(args, "--cert-identity-regex"));
+    const identity = (repository, workflow) =>
+      `https://github.com/a-novel/${repository}/.github/workflows/${workflow}@refs/tags/v2.10.4`;
+    assert.ok(signer.test(identity("service-json-keys", "release.yaml")));
+    assert.ok(signer.test(identity("service-json-keys", "main.yaml")));
+    assert.ok(!signer.test(identity("service-json-keys", "gates.yaml")));
+    assert.ok(!signer.test(identity("service-json-keys-fork", "main.yaml")));
+    assert.ok(!signer.test(identity("service-genai", "release.yaml")));
+    assert.ok(
+      !signer.test(
+        identity("service-json-keys", "main.yaml").replace(
+          "v2.10.4",
+          "v2.10.40",
+        ),
+      ),
+    );
+    assert.ok(
+      !signer.test(
+        identity("service-json-keys", "main.yaml").replace(
+          "v2.10.4",
+          "v2x10x4",
+        ),
+      ),
+    );
+    assert.equal(flag(args, "--source-ref"), "refs/tags/v2.10.4");
+    assert.ok(args.includes("--deny-self-hosted-runners"));
+  });
+
+  it("admits only its producer's workflow on master for any other image", () => {
+    const args = attestationArgs(
+      checks(
+        plan(
+          [],
+          [
+            copy(credentials, {
+              producer: "a-novel/infra",
+              workflow: "publish-rollout-verifier.yaml",
+            }),
+          ],
+        ),
+      )[0],
+    );
+    assert.equal(
+      flag(args, "--signer-workflow"),
+      "a-novel/infra/.github/workflows/publish-rollout-verifier.yaml",
+    );
+    assert.equal(flag(args, "--source-ref"), "refs/heads/master");
+    assert.ok(!args.includes("--cert-identity-regex"));
+  });
+
+  // A flag gh does not know would fail every plan's verification.
+  it("passes only flags the installed gh attestation verify knows", () => {
+    const help = execFileSync("gh", ["attestation", "verify", "--help"], {
+      encoding: "utf8",
+    });
+    const known = new Set(help.match(/--[a-z-]+/g));
+    for (const check of [
+      checks(plan([], [copy(grpc("v2.10.4", "a"))]))[0],
+      checks(
+        plan(
+          [],
+          [
+            copy(credentials, {
+              producer: "a-novel/infra",
+              workflow: "publish-rollout-verifier.yaml",
+            }),
+          ],
+        ),
+      )[0],
+    ]) {
+      for (const flag of attestationArgs(check).filter((arg) =>
+        arg.startsWith("--"),
+      ))
+        assert.ok(known.has(flag), flag);
+    }
   });
 });

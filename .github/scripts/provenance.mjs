@@ -1,8 +1,9 @@
 // Release provenance of the images a plan copies. A release image deploys only from an immutable
-// Release the release App published, built by that tag's own run, and never below the version
-// already deployed: pull requests only move forward. Any other image must come from its producer's
-// workflow on master. The pins the last apply deployed, the output's value before this plan, were
-// verified when they deployed; the plan's prior state already shows the new outputs.
+// Release the release App published, built by that tag's own run, release.yaml's or main.yaml's,
+// and never below the version already deployed: pull requests only move forward. Any other image
+// must come from its producer's workflow on master. The pins the last apply deployed, the output's
+// value before this plan, were verified when they deployed; the plan's prior state already shows
+// the new outputs.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -52,25 +53,42 @@ function check({ source, producer, workflow }, deployed) {
   };
 }
 
-// A failure's message carries the command's stderr.
-const gh = (...args) =>
-  execFileSync("gh", args, { encoding: "utf8", stdio: "pipe" }).trim();
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
-function verify({ source, subject, producer, workflow, tag }, releaseBot) {
+/**
+ * The `gh attestation verify` arguments one check needs. A release tag's images come from its own
+ * run, which is release.yaml's, or main.yaml's once the repository builds its images there on tags.
+ * The certificate names the signing workflow and the tag it ran on, and --source-ref the tag again.
+ */
+export function attestationArgs({ subject, producer, workflow, tag }) {
   const release = workflow === "release.yaml";
-  gh(
+  const signer = release
+    ? [
+        "--cert-identity-regex",
+        `^https://github\\.com/${escape(producer)}/\\.github/workflows/(main|release)\\.yaml@${escape(`refs/tags/${tag}`)}$`,
+      ]
+    : ["--signer-workflow", `${producer}/.github/workflows/${workflow}`];
+  return [
     "attestation",
     "verify",
     subject,
     "--repo",
     producer,
-    "--signer-workflow",
-    `${producer}/.github/workflows/${workflow}`,
+    ...signer,
     "--source-ref",
     release ? `refs/tags/${tag}` : "refs/heads/master",
     "--deny-self-hosted-runners",
-  );
-  if (!release) return;
+  ];
+}
+
+// A failure's message carries the command's stderr.
+const gh = (...args) =>
+  execFileSync("gh", args, { encoding: "utf8", stdio: "pipe" }).trim();
+
+function verify(check, releaseBot) {
+  const { source, producer, workflow, tag } = check;
+  gh(...attestationArgs(check));
+  if (workflow !== "release.yaml") return;
   if (!releaseBot) throw new Error("RELEASE_BOT_LOGIN is not set.");
   const published = gh(
     "api",
