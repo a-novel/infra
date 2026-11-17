@@ -82,7 +82,9 @@ resource "google_project_service" "workload" {
   project = google_project.workload.project_id
   service = each.value
 
-  # Removing code must not disable an API that a recovery path still needs.
+  # Removing code must not disable an API that a recovery path still needs. Cloud Run and Cloud
+  # Scheduler served the services and jobs the cluster replaced (#1390), so the change that removes
+  # them disables them.
   disable_dependent_services = false
-  disable_on_destroy         = false
+  disable_on_destroy         = contains(["cloudscheduler.googleapis.com", "run.googleapis.com"], each.value)
 }
