@@ -536,6 +536,66 @@ run "runs_every_workload_on_two_pods_or_more" {
   }
 }
 
+# apis.tf names each API's callers once; these check what derives from it.
+run "admits_only_each_apis_callers" {
+  command = plan
+
+  assert {
+    condition = alltrue([for key, api in local.apis : (
+      [for peer in one(kubernetes_network_policy_v1.api[key].spec).ingress[0].from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], local.service_apis[key].namespace)}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == concat(sort(api.callers), ["${local.service_apis[key].namespace}/smoke"]) &&
+      [for rule in one(kubernetes_network_policy_v1.api[key].spec).ingress : [for port in rule.ports : port.port]] == concat([[tostring(local.service_port)]], [for port in try([api.metrics_port], []) : [tostring(port)]])
+    )])
+    error_message = "Each API must admit its callers and its namespace's smoke check on its TLS port alone, and GKE's metrics readers on the metrics port of an API that scales on its calls."
+  }
+
+  assert {
+    condition = alltrue([for key, env in {
+      "authentication/rest"   = local.authentication_env
+      "genai/grpc"            = local.genai_grpc_env
+      "json-keys/grpc"        = local.json_keys_env
+      "narrative-engine/rest" = local.narrative_engine_env
+      "profile/rest"          = local.profile_env
+      } : (
+      local.apis[key].tokens &&
+      env.SERVICE_TOKEN_CALLERS == local.token_callers[key] &&
+      env.SERVICE_TOKEN_AUDIENCE == local.service_apis[key].namespace &&
+      env.SERVICE_TOKEN_ISSUER == local.service_token_issuer
+    )]) && length([for api in values(local.apis) : api if api.tokens]) == 5
+    error_message = "Each API that verifies service tokens must admit exactly its callers and its smoke check, for its namespace's audience, from this cluster's issuer."
+  }
+
+  # Every caller runs a policy of its own: an API's, or a platform's.
+  assert {
+    condition = alltrue([for caller, apis in local.calls : (
+      [for peer in one([for rule in one(contains(keys(local.apis), caller) ? kubernetes_network_policy_v1.api[caller].spec : kubernetes_network_policy_v1.platform_web[split("/", caller)[0]].spec).egress : rule if[for port in rule.ports : port.port] == [tostring(local.service_port)]]).to :
+      "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == apis
+    )])
+    error_message = "Each caller must reach exactly the APIs it calls, on their TLS port."
+  }
+
+  # The issuer's keys come from Google: only an API that verifies tokens reaches it. The public keys'
+  # server reaches nothing.
+  assert {
+    condition = alltrue([for key, api in local.apis : (
+      anytrue([for rule in one(kubernetes_network_policy_v1.api[key].spec).egress : [for port in rule.ports : port.port] == ["443"]]) == api.tokens
+    )]) && length(one(kubernetes_network_policy_v1.api["json-keys/rest"].spec).egress) == 0
+    error_message = "Only the APIs that verify service tokens may reach Google's restricted API addresses, and JSON Keys' public keys nothing at all."
+  }
+
+  # A service that trusts a forwarded visitor header lists only the platforms.
+  assert {
+    condition = alltrue([for key, env in {
+      "authentication/rest"   = local.authentication_env
+      "narrative-engine/rest" = local.narrative_engine_env
+      "profile/rest"          = local.profile_env
+      } : (
+      env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
+      length(setsubtract(local.apis[key].callers, local.platform_workloads)) == 0
+    )])
+    error_message = "An API that trusts the visitor IP header must be called only by the platforms."
+  }
+}
+
 run "runs_json_keys" {
   command = plan
 
@@ -549,27 +609,7 @@ run "runs_json_keys" {
     error_message = "JSON Keys' servers must use their CloudNativePG database by its certificate's name, and its gRPC server must verify this cluster's service tokens."
   }
 
-  assert {
-    condition = (
-      length(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress) == 1 &&
-      [for peer in one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "json-keys")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["authentication:rest", "narrative-engine:rest", "profile:rest", "json-keys:smoke"] &&
-      toset(split(",", local.json_keys_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:authentication:rest", "system:serviceaccount:narrative-engine:rest", "system:serviceaccount:profile:rest", "system:serviceaccount:json-keys:smoke"]) &&
-      one(one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).ports).port == local.json_keys_env.GRPC_PORT
-    )
-    error_message = "Only the Authentication, narrative-engine and profile APIs and the smoke check may call JSON Keys, on its TLS port alone."
-  }
 
-  # The public keys take no service token, so the REST server's policy alone decides who reads them.
-  assert {
-    condition = (
-      toset(one(kubernetes_network_policy_v1.json_keys_rest.spec).policy_types) == toset(["Ingress", "Egress"]) &&
-      length(one(kubernetes_network_policy_v1.json_keys_rest.spec).egress) == 0 &&
-      length(one(kubernetes_network_policy_v1.json_keys_rest.spec).ingress) == 1 &&
-      toset([for peer in one(one(kubernetes_network_policy_v1.json_keys_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "json-keys")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"]) == toset(concat([for platform in keys(local.platforms) : "${platform}:web"], ["json-keys:smoke"])) &&
-      [for port in one(one(kubernetes_network_policy_v1.json_keys_rest.spec).ingress).ports : port.port] == [local.json_keys_rest_env.REST_PORT]
-    )
-    error_message = "Only the platforms' web pods and the smoke check may read JSON Keys' public keys, on its TLS port alone, and its REST server's policy may open no egress."
-  }
 
   # The REST server reaches its database as one of its clients, and serves TLS for its Service's name.
   assert {
@@ -604,23 +644,14 @@ run "runs_authentication" {
       !contains(keys(local.authentication_env), "GCLOUD_PROJECT_ID") &&
       startswith(local.authentication_env.SERVICE_JSON_KEYS_HOST, "${module.json_keys_grpc.pod_labels["app.kubernetes.io/name"]}.json-keys.") &&
       contains(split(",", local.json_keys_env.SERVICE_TOKEN_CALLERS), module.authentication_rest.service_account) &&
-      one(one(one(kubernetes_network_policy_v1.authentication_rest.spec).egress[0].to).pod_selector).match_labels["app.kubernetes.io/name"] == module.json_keys_grpc.pod_labels["app.kubernetes.io/name"] &&
-      contains([for port in one(kubernetes_network_policy_v1.authentication_rest.spec).egress[0].ports : port.port], local.json_keys_env.GRPC_PORT) &&
+      one(one(one(kubernetes_network_policy_v1.api["authentication/rest"].spec).egress[0].to).pod_selector).match_labels["app.kubernetes.io/name"] == module.json_keys_grpc.pod_labels["app.kubernetes.io/name"] &&
+      contains([for port in one(kubernetes_network_policy_v1.api["authentication/rest"].spec).egress[0].ports : port.port], local.json_keys_env.GRPC_PORT) &&
       local.authentication_env.SERVICE_JSON_KEYS_TLS == "true" &&
       one(kubernetes_manifest.service_server_certificate["json-keys/grpc"].manifest.spec.dnsNames) == local.authentication_env.SERVICE_JSON_KEYS_HOST
     )
     error_message = "Authentication must call JSON Keys' server directly over TLS, as a caller JSON Keys admits, verifying the name its certificate carries."
   }
 
-  assert {
-    condition = (
-      length(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress) == 1 &&
-      toset([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]]) == toset(["web", "smoke"]) &&
-      toset(split(",", local.authentication_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:account:web", "system:serviceaccount:studio:web", "system:serviceaccount:authentication:smoke"]) &&
-      contains([for port in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).ports : port.port], local.authentication_env.REST_PORT)
-    )
-    error_message = "Only the platforms and the smoke check may call Authentication, whose visitor IP header trusts the platforms."
-  }
 
   # Several pods keep one budget per rate limit only through the counter store.
   assert {
@@ -700,8 +731,8 @@ run "keeps_each_services_counters_in_a_locked_store_of_its_own" {
   # The chart names each store's Service after its release.
   assert {
     condition = toset([for service, client in {
-      authentication   = { env = local.authentication_env, secret_env = local.authentication_secret_env, policy = kubernetes_network_policy_v1.authentication_rest }
-      narrative-engine = { env = local.narrative_engine_env, secret_env = local.narrative_engine_secret_env, policy = kubernetes_network_policy_v1.narrative_engine_rest }
+      authentication   = { env = local.authentication_env, secret_env = local.authentication_secret_env, policy = kubernetes_network_policy_v1.api["authentication/rest"] }
+      narrative-engine = { env = local.narrative_engine_env, secret_env = local.narrative_engine_secret_env, policy = kubernetes_network_policy_v1.api["narrative-engine/rest"] }
       } : service if alltrue([
         client.env.REST_RATE_LIMIT_STORE_ADDR == "${helm_release.counter_store[service].name}.${helm_release.counter_store[service].namespace}.svc:${one(one(kubernetes_network_policy_v1.counter_store[service].spec).ingress[0].ports).port}",
         client.secret_env.REST_RATE_LIMIT_STORE_PASSWORD == { secret = kubernetes_manifest.counter_store_users[service].manifest.spec.target.name, key = client.env.REST_RATE_LIMIT_STORE_USERNAME },
@@ -758,18 +789,10 @@ run "runs_genai" {
     error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep checks generations on its own ticker."
   }
 
-  assert {
-    condition = (
-      toset(split(",", local.genai_grpc_env.SERVICE_TOKEN_CALLERS)) == toset(["system:serviceaccount:narrative-engine:rest", "system:serviceaccount:genai:smoke"]) &&
-      [for rule in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress : [for port in rule.ports : port.port]] == [[local.genai_grpc_env.GRPC_PORT], [local.genai_grpc_env.METRICS_PORT]] &&
-      [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[0].from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "genai")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["narrative-engine:rest", "genai:smoke"]
-    )
-    error_message = "Only narrative-engine's API and GenAI's own smoke check may call its server."
-  }
 
   # Each peer of the metrics rule names its source range or namespace, and one of them only.
   assert {
-    condition = [for peer in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress[1].from :
+    condition = [for peer in one(kubernetes_network_policy_v1.api["genai/grpc"].spec).ingress[1].from :
       concat([for block in peer.ip_block : block.cidr], [for selector in peer.namespace_selector : selector.match_labels["kubernetes.io/metadata.name"]])
     ] == [[local.cluster.node_range], ["kube-system"]]
     error_message = "Only the nodes and kube-system may read the server's calls in flight, on its metrics port alone."
@@ -800,14 +823,14 @@ run "runs_narrative_engine" {
   # The callees serve TLS only, so a plaintext dial reaches neither.
   assert {
     condition = alltrue([for callee in [
-      { prefix = "SERVICE_JSON_KEYS", namespace = "json-keys", workload = module.json_keys_grpc, env = local.json_keys_env, policy = kubernetes_network_policy_v1.json_keys_grpc },
-      { prefix = "SERVICE_GENAI", namespace = "genai", workload = module.genai_grpc, env = local.genai_grpc_env, policy = kubernetes_network_policy_v1.genai_grpc },
+      { prefix = "SERVICE_JSON_KEYS", namespace = "json-keys", workload = module.json_keys_grpc, env = local.json_keys_env, policy = kubernetes_network_policy_v1.api["json-keys/grpc"] },
+      { prefix = "SERVICE_GENAI", namespace = "genai", workload = module.genai_grpc, env = local.genai_grpc_env, policy = kubernetes_network_policy_v1.api["genai/grpc"] },
       ] : (
       local.narrative_engine_env["${callee.prefix}_HOST"] == one(kubernetes_manifest.service_server_certificate["${callee.namespace}/${callee.workload.service.name}"].manifest.spec.dnsNames) &&
       local.narrative_engine_env["${callee.prefix}_PORT"] == tostring(callee.workload.service.port) &&
       local.narrative_engine_env["${callee.prefix}_TLS"] == "true" &&
       contains(split(",", callee.env.SERVICE_TOKEN_CALLERS), module.narrative_engine_rest.service_account) &&
-      contains([for peer in one(kubernetes_network_policy_v1.narrative_engine_rest.spec).egress[0].to : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]], callee.namespace) &&
+      contains([for peer in one(kubernetes_network_policy_v1.api["narrative-engine/rest"].spec).egress[0].to : one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]], callee.namespace) &&
       contains(flatten([for rule in one(callee.policy.spec).ingress : [for peer in rule.from : try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "")]]), "narrative-engine")
     )])
     error_message = "Narrative-engine must call JSON Keys and GenAI over TLS, by the names their certificates carry, as a caller each admits and reaches."
@@ -815,13 +838,10 @@ run "runs_narrative_engine" {
 
   assert {
     condition = (
-      length(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress) == 1 &&
-      [for peer in one(one(kubernetes_network_policy_v1.narrative_engine_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "narrative-engine")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"] == ["studio:web", "narrative-engine:smoke"] &&
-      toset(split(",", local.narrative_engine_env.SERVICE_TOKEN_CALLERS)) == toset([module.platform_web["studio"].service_account, "system:serviceaccount:narrative-engine:smoke"]) &&
       local.narrative_engine_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
       one(kubernetes_manifest.service_server_certificate["narrative-engine/rest"].manifest.spec.dnsNames) == "${module.narrative_engine_rest.service.name}.narrative-engine.svc"
     )
-    error_message = "Only Studio's web pods and narrative-engine's smoke check may call its API, over TLS, and it must trust the visitor IP Studio forwards."
+    error_message = "Narrative-engine's API must serve TLS for its Service's name, and trust the visitor IP Studio forwards."
   }
 }
 
@@ -867,28 +887,24 @@ run "runs_profile" {
       local.profile_env.SERVICE_JSON_KEYS_PORT == tostring(module.json_keys_grpc.service.port) &&
       local.profile_env.SERVICE_JSON_KEYS_TLS == "true" &&
       contains(split(",", local.json_keys_env.SERVICE_TOKEN_CALLERS), module.profile_rest.service_account) &&
-      one(one(kubernetes_network_policy_v1.profile_rest.spec).egress[0].to).namespace_selector[0].match_labels["kubernetes.io/metadata.name"] == "json-keys" &&
-      contains([for peer in one(one(kubernetes_network_policy_v1.json_keys_grpc.spec).ingress).from : try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "")], "profile")
+      one(one(kubernetes_network_policy_v1.api["profile/rest"].spec).egress[0].to).namespace_selector[0].match_labels["kubernetes.io/metadata.name"] == "json-keys" &&
+      contains([for peer in one(one(kubernetes_network_policy_v1.api["json-keys/grpc"].spec).ingress).from : try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "")], "profile")
     )
     error_message = "Profile must call JSON Keys over TLS, by the name its certificate carries, as a caller JSON Keys admits and reaches."
   }
 
   assert {
     condition = (
-      length(one(kubernetes_network_policy_v1.profile_rest.spec).ingress) == 1 &&
-      toset([for peer in one(one(kubernetes_network_policy_v1.profile_rest.spec).ingress).from : "${try(one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"], "profile")}:${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"]) == toset(concat([for platform in keys(local.platforms) : "${platform}:web"], ["profile:smoke"])) &&
-      toset(split(",", local.profile_env.SERVICE_TOKEN_CALLERS)) == toset(concat([for workload in values(module.platform_web) : workload.service_account], ["system:serviceaccount:profile:smoke"])) &&
       local.profile_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
       one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames) == "${module.profile_rest.service.name}.profile.svc"
     )
-    error_message = "Only the platforms and the smoke check may call profile's API, over TLS at the name its certificate carries, and profile must trust the visitor IP the platforms forward."
+    error_message = "Profile's API must serve TLS at the name its certificate carries, and trust the visitor IP the platforms forward."
   }
 
   # Every platform shows the visitor's own profile, so the platforms list alone grants the calls.
   assert {
     condition = alltrue([for platform, env in local.platform_env :
       env.PROFILE_SERVICE_URL == "https://${one(kubernetes_manifest.service_server_certificate["profile/rest"].manifest.spec.dnsNames)}:${local.profile_env.REST_PORT}" &&
-      lookup(local.platform_services[platform], "profile", null) != null &&
       contains([for peer in one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).to :
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
       ], "profile/${module.profile_rest.pod_labels["app.kubernetes.io/name"]}") &&
@@ -932,7 +948,7 @@ run "runs_each_platform" {
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
       ], "authentication/${module.authentication_rest.pod_labels["app.kubernetes.io/name"]}") &&
       contains([for port in one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).ports : port.port], local.authentication_env.REST_PORT) &&
-      contains([for peer in one(one(kubernetes_network_policy_v1.authentication_rest.spec).ingress).from :
+      contains([for peer in one(one(kubernetes_network_policy_v1.api["authentication/rest"].spec).ingress).from :
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
         if length(peer.namespace_selector) > 0
       ], "${platform}/${module.platform_web[platform].pod_labels["app.kubernetes.io/name"]}")
@@ -948,7 +964,7 @@ run "runs_each_platform" {
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
       ], "json-keys/${module.json_keys_rest.pod_labels["app.kubernetes.io/name"]}") &&
       contains([for port in one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).ports : port.port], local.json_keys_rest_env.REST_PORT) &&
-      contains([for peer in one(one(kubernetes_network_policy_v1.json_keys_rest.spec).ingress).from :
+      contains([for peer in one(one(kubernetes_network_policy_v1.api["json-keys/rest"].spec).ingress).from :
         "${one(peer.namespace_selector).match_labels["kubernetes.io/metadata.name"]}/${one(peer.pod_selector).match_labels["app.kubernetes.io/name"]}"
         if length(peer.namespace_selector) > 0
       ], "${platform}/${module.platform_web[platform].pod_labels["app.kubernetes.io/name"]}")
@@ -956,16 +972,6 @@ run "runs_each_platform" {
     error_message = "Each platform must read JSON Keys' public keys from its REST server over TLS, by the name its certificate carries, through policies that let it reach and admit it."
   }
 
-  # platform_services names each service by its namespace, which the module takes as the audience of
-  # the platform's token. Every service that takes a token is listed here.
-  assert {
-    condition = alltrue(flatten([for platform, services in local.platform_services : [
-      length(one(one(kubernetes_network_policy_v1.platform_web[platform].spec).egress).to) == length(services),
-      services["json-keys"] == null,
-      [for service, variable in services : { authentication = local.authentication_env, narrative-engine = local.narrative_engine_env, profile = local.profile_env }[service].SERVICE_TOKEN_AUDIENCE == service if variable != null],
-    ]]))
-    error_message = "Each platform must reach only the services it calls, and send each service that takes a token one for that service's audience."
-  }
 }
 
 run "registers_every_other_platform_as_a_client" {
@@ -1055,7 +1061,7 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.smoke)) == toset(["authentication", "genai", "json-keys", "json-keys-rest", "narrative-engine", "profile"]) &&
+      toset([for name in keys(kubernetes_job_v1.smoke) : "${local.health_checks[name].service}/${local.health_checks[name].pods}"]) == toset(keys(local.apis)) &&
       toset(keys(kubernetes_cron_job_v1.health)) == toset(keys(kubernetes_job_v1.smoke)) &&
       length(distinct([for cron in kubernetes_cron_job_v1.health : "${cron.metadata[0].namespace}/${cron.metadata[0].name}"])) == length(kubernetes_cron_job_v1.health) &&
       alltrue([for name, job in kubernetes_job_v1.smoke :
@@ -1085,12 +1091,12 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   assert {
     condition = alltrue([for name, target in {
-      authentication   = { namespace = "authentication", workload = module.authentication_rest, policy = kubernetes_network_policy_v1.authentication_rest }
-      genai            = { namespace = "genai", workload = module.genai_grpc, policy = kubernetes_network_policy_v1.genai_grpc }
-      json-keys        = { namespace = "json-keys", workload = module.json_keys_grpc, policy = kubernetes_network_policy_v1.json_keys_grpc }
-      json-keys-rest   = { namespace = "json-keys", workload = module.json_keys_rest, policy = kubernetes_network_policy_v1.json_keys_rest }
-      narrative-engine = { namespace = "narrative-engine", workload = module.narrative_engine_rest, policy = kubernetes_network_policy_v1.narrative_engine_rest }
-      profile          = { namespace = "profile", workload = module.profile_rest, policy = kubernetes_network_policy_v1.profile_rest }
+      authentication   = { namespace = "authentication", workload = module.authentication_rest, policy = kubernetes_network_policy_v1.api["authentication/rest"] }
+      genai            = { namespace = "genai", workload = module.genai_grpc, policy = kubernetes_network_policy_v1.api["genai/grpc"] }
+      json-keys        = { namespace = "json-keys", workload = module.json_keys_grpc, policy = kubernetes_network_policy_v1.api["json-keys/grpc"] }
+      json-keys-rest   = { namespace = "json-keys", workload = module.json_keys_rest, policy = kubernetes_network_policy_v1.api["json-keys/rest"] }
+      narrative-engine = { namespace = "narrative-engine", workload = module.narrative_engine_rest, policy = kubernetes_network_policy_v1.api["narrative-engine/rest"] }
+      profile          = { namespace = "profile", workload = module.profile_rest, policy = kubernetes_network_policy_v1.api["profile/rest"] }
       } : alltrue([for pod in [kubernetes_job_v1.smoke[name].spec[0].template[0], kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].template[0]] : (
         kubernetes_job_v1.smoke[name].metadata[0].namespace == target.namespace &&
         kubernetes_cron_job_v1.health[name].metadata[0].namespace == target.namespace &&
@@ -1265,7 +1271,7 @@ run "makes_one_openai_call_per_revision_as_a_caller_genai_admits" {
       { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_TOKEN_PATH"] == "/var/run/secrets/tokens/${local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE}" &&
       { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_URL"] == "https://${module.genai_grpc.service.name}.genai.svc:${module.genai_grpc.service.port}" &&
       { for env in one(pod.spec[0].container).env : env.name => env.value }["SSL_CERT_FILE"] == "${one([for mount in one(pod.spec[0].container).volume_mount : mount.mount_path if mount.name == "service-ca"])}/ca.crt" &&
-      contains(flatten([for rule in one(kubernetes_network_policy_v1.genai_grpc.spec).ingress : [for peer in rule.from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] if contains([for port in rule.ports : port.port], tostring(module.genai_grpc.service.port))]), pod.metadata[0].labels["app.kubernetes.io/name"]) &&
+      contains(flatten([for rule in one(kubernetes_network_policy_v1.api["genai/grpc"].spec).ingress : [for peer in rule.from : one(peer.pod_selector).match_labels["app.kubernetes.io/name"]] if contains([for port in rule.ports : port.port], tostring(module.genai_grpc.service.port))]), pod.metadata[0].labels["app.kubernetes.io/name"]) &&
       kubernetes_network_policy_v1.smoke["genai"].spec[0].pod_selector[0].match_labels == pod.metadata[0].labels
     )])
     error_message = "The provider check must run in GenAI's server image, call its Service with a token for its audience as a caller it admits, and reach only its pods, which admit it."

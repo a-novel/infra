@@ -186,7 +186,8 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
 kubelet projects for that service's audience, which the cluster signs. Each service admits only its
-named callers: JSON Keys admits the Authentication, narrative-engine and profile APIs, GenAI admits
+named callers, which the cluster root's `apis` table lists once, for both the service tokens and the
+network policies: JSON Keys admits the Authentication, narrative-engine and profile APIs, GenAI admits
 narrative-engine's, Authentication and profile admit the platforms, narrative-engine admits Studio,
 and each admits its own `smoke` identity. JSON Keys' public REST API takes no token: only its
 network policy limits it to the platforms and its `smoke` identity. Authentication and profile trust

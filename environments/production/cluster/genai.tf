@@ -1,5 +1,6 @@
 # GenAI's gRPC server, which scales on CPU and its calls in flight, and its sweep, which checks the
-# generations nobody polled.
+# generations nobody polled. Nothing calls the sweep, which reaches only OpenAI (egress.tf) and its
+# database.
 locals {
   genai_env        = merge(local.database_env["genai"], local.downtime_env["genai"])
   genai_secret_env = merge(local.database_secret_env, { OPENAI_API_KEY = { secret = "secrets", key = "OPENAI_API_KEY" } })
@@ -10,12 +11,12 @@ locals {
     GOMEMLIMIT                = "1600MiB"
     GRPC_MAX_CONCURRENT_CALLS = "20"
     GRPC_PORT                 = tostring(local.service_port)
-    METRICS_PORT              = "9090"
+    METRICS_PORT              = tostring(local.apis["genai/grpc"].metrics_port)
     POSTGRES_MAX_OPEN_CONNS   = "10"
     POSTGRES_MAX_IDLE_CONNS   = "10"
     SERVICE_TOKEN_ISSUER      = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE    = "genai"
-    SERVICE_TOKEN_CALLERS     = "system:serviceaccount:narrative-engine:rest,system:serviceaccount:genai:smoke"
+    SERVICE_TOKEN_CALLERS     = local.token_callers["genai/grpc"]
   })
 
   genai_sweep_env = merge(local.genai_env, local.telemetry_env["genai"].job, {
@@ -82,80 +83,4 @@ module "genai_sweep" {
   replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
-}
-
-# Narrative-engine's API and GenAI's smoke and provider checks call the server, which reaches the
-# issuer's keys through Google's restricted API addresses and OpenAI (egress.tf). Nothing calls the
-# sweep, which reaches OpenAI alone.
-resource "kubernetes_network_policy_v1" "genai_grpc" {
-  metadata {
-    name      = "grpc"
-    namespace = kubernetes_namespace_v1.service["genai"].metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = { "app.kubernetes.io/name" = "grpc" }
-    }
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "narrative-engine" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "rest" }
-        }
-      }
-      from {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "smoke" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    # GKE reads the calls in flight for the autoscaler, from a source it does not document: a node,
-    # or a pod in kube-system.
-    ingress {
-      from {
-        ip_block {
-          cidr = local.cluster.node_range
-        }
-      }
-
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
-        }
-      }
-
-      ports {
-        port     = local.genai_grpc_env.METRICS_PORT
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      dynamic "to" {
-        for_each = local.cluster.google_api_ranges
-
-        content {
-          ip_block {
-            cidr = to.value
-          }
-        }
-      }
-
-      ports {
-        port     = "443"
-        protocol = "TCP"
-      }
-    }
-  }
 }

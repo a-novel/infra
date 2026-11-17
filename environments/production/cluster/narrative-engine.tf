@@ -19,7 +19,7 @@ locals {
     SERVICE_GENAI_TLS       = "true"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "narrative-engine"
-    SERVICE_TOKEN_CALLERS   = join(",", [local.platform_callers.studio, "system:serviceaccount:narrative-engine:smoke"])
+    SERVICE_TOKEN_CALLERS   = local.token_callers["narrative-engine/rest"]
     # Only Studio calls the API for its writers, so it can trust the visitor IP Studio forwards.
     REST_CLIENT_IP_HEADER = "X-Client-IP"
     # Every pod counts its rate limits in the counter store as its limiter user, and on its own
@@ -60,92 +60,4 @@ module "narrative_engine_rest" {
 
   # Its pods read the limiter's password as they start.
   depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.counter_store_users]
-}
-
-# Studio's web pods and the smoke check call the API, which calls JSON Keys and GenAI, reaches the
-# issuer's keys through Google's restricted API addresses, and counts its rate limits in the counter
-# store.
-resource "kubernetes_network_policy_v1" "narrative_engine_rest" {
-  metadata {
-    name      = "rest"
-    namespace = kubernetes_namespace_v1.service["narrative-engine"].metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = { "app.kubernetes.io/name" = "rest" }
-    }
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "studio" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "web" }
-        }
-      }
-      from {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "smoke" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      dynamic "to" {
-        for_each = ["json-keys", "genai"]
-
-        content {
-          namespace_selector {
-            match_labels = { "kubernetes.io/metadata.name" = to.value }
-          }
-          pod_selector {
-            match_labels = { "app.kubernetes.io/name" = "grpc" }
-          }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      dynamic "to" {
-        for_each = local.cluster.google_api_ranges
-
-        content {
-          ip_block {
-            cidr = to.value
-          }
-        }
-      }
-
-      ports {
-        port     = "443"
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      to {
-        pod_selector {
-          match_labels = local.counter_store_pods
-        }
-      }
-
-      ports {
-        port     = "6379"
-        protocol = "TCP"
-      }
-    }
-  }
 }

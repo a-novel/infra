@@ -132,8 +132,8 @@ Alloy gives each request, job run and email send an outcome, which the dashboard
   as [Ops basics](../ops-basics.md#identities) shows. A restart empties the counters, which only
   resets the current windows. `Collector silent` firing with it means Alloy stopped, not the store.
 - **Rate limits counted locally while the store answers:** the service's pods cannot reach its
-  Valkey or log in. Check the `rest` network policy in the service's file of the cluster root,
-  `authentication.tf` or `narrative-engine.tf`, whose egress must reach the store on 6379, then
+  Valkey or log in. Check the service's `rest` network policy in the cluster root's `apis.tf`,
+  whose egress must reach the store on 6379, then
   the store's `valkey` policy and the limiter's ACL in `counter-store.tf`, which must admit every
   command golib sends. A store answering slower than 100 ms fires it too: **Store commands**, in
   the Rate limits section of the service's Services tab, shows its time.

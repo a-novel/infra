@@ -11,7 +11,7 @@ locals {
     SERVICE_JSON_KEYS_TLS   = "true"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "profile"
-    SERVICE_TOKEN_CALLERS   = join(",", concat(values(local.platform_callers), ["system:serviceaccount:profile:smoke"]))
+    SERVICE_TOKEN_CALLERS   = local.token_callers["profile/rest"]
     # Only the platforms call the API for their visitors, so it can trust the visitor IP they
     # forward. Without it, every visitor would share their platform's rate limit.
     REST_CLIENT_IP_HEADER = "X-Client-IP"
@@ -42,78 +42,4 @@ module "profile_rest" {
   replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations]
-}
-
-# The platforms and the smoke check call the API, which calls JSON Keys, and reaches the issuer's
-# keys through Google's restricted API addresses.
-resource "kubernetes_network_policy_v1" "profile_rest" {
-  metadata {
-    name      = "rest"
-    namespace = kubernetes_namespace_v1.service["profile"].metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = { "app.kubernetes.io/name" = "rest" }
-    }
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      dynamic "from" {
-        for_each = local.platforms
-
-        content {
-          namespace_selector {
-            match_labels = { "kubernetes.io/metadata.name" = from.key }
-          }
-          pod_selector {
-            match_labels = { "app.kubernetes.io/name" = "web" }
-          }
-        }
-      }
-      from {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "smoke" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      to {
-        namespace_selector {
-          match_labels = { "kubernetes.io/metadata.name" = "json-keys" }
-        }
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "grpc" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      dynamic "to" {
-        for_each = local.cluster.google_api_ranges
-
-        content {
-          ip_block {
-            cidr = to.value
-          }
-        }
-      }
-
-      ports {
-        port     = "443"
-        protocol = "TCP"
-      }
-    }
-  }
 }
