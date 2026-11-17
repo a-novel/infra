@@ -5,12 +5,12 @@
 locals {
   # Each API by "<namespace>/<workload>", with its callers named the same way. tokens tells whether it
   # verifies their service tokens, against the keys it reads from Google. metrics_port opens the port
-  # GKE reads the calls in flight from, for an API that scales on them.
+  # GKE reads the calls in flight from, for an API that scales on them. JSON Keys' public keys take
+  # no token, so the policy alone decides who reads them.
   apis = {
-    "authentication/rest" = { callers = local.platform_workloads, tokens = true }
-    "genai/grpc"          = { callers = ["narrative-engine/rest"], tokens = true, metrics_port = 9090 }
-    "json-keys/grpc"      = { callers = ["authentication/rest", "narrative-engine/rest", "profile/rest"], tokens = true }
-    # The public keys take no token, so the policy alone decides who reads them.
+    "authentication/rest"   = { callers = local.platform_workloads, tokens = true }
+    "genai/grpc"            = { callers = ["narrative-engine/rest"], tokens = true, metrics_port = 9090 }
+    "json-keys/grpc"        = { callers = ["authentication/rest", "narrative-engine/rest", "profile/rest"], tokens = true }
     "json-keys/rest"        = { callers = local.platform_workloads, tokens = false }
     "narrative-engine/rest" = { callers = ["studio/web"], tokens = true }
     "profile/rest"          = { callers = local.platform_workloads, tokens = true }

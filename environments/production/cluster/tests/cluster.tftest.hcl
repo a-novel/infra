@@ -559,9 +559,10 @@ run "admits_only_each_apis_callers" {
       local.apis[key].tokens &&
       env.SERVICE_TOKEN_CALLERS == local.token_callers[key] &&
       env.SERVICE_TOKEN_AUDIENCE == local.service_apis[key].namespace &&
-      env.SERVICE_TOKEN_ISSUER == local.service_token_issuer
+      env.SERVICE_TOKEN_ISSUER == local.service_token_issuer &&
+      (lookup(env, "REST_CLIENT_IP_HEADER", null) == null || length(setsubtract(local.apis[key].callers, local.platform_workloads)) == 0)
     )]) && length([for api in values(local.apis) : api if api.tokens]) == 5
-    error_message = "Each API that verifies service tokens must admit exactly its callers and its smoke check, for its namespace's audience, from this cluster's issuer."
+    error_message = "Each API that verifies service tokens must admit exactly its callers and its smoke check, for its namespace's audience, from this cluster's issuer, and one that trusts the visitor IP header only the platforms."
   }
 
   # Every caller runs a policy of its own: an API's, or a platform's.
@@ -581,19 +582,6 @@ run "admits_only_each_apis_callers" {
     )]) && length(one(kubernetes_network_policy_v1.api["json-keys/rest"].spec).egress) == 0
     error_message = "Only the APIs that verify service tokens may reach Google's restricted API addresses, and JSON Keys' public keys nothing at all."
   }
-
-  # A service that trusts a forwarded visitor header lists only the platforms.
-  assert {
-    condition = alltrue([for key, env in {
-      "authentication/rest"   = local.authentication_env
-      "narrative-engine/rest" = local.narrative_engine_env
-      "profile/rest"          = local.profile_env
-      } : (
-      env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
-      length(setsubtract(local.apis[key].callers, local.platform_workloads)) == 0
-    )])
-    error_message = "An API that trusts the visitor IP header must be called only by the platforms."
-  }
 }
 
 run "runs_json_keys" {
@@ -608,8 +596,6 @@ run "runs_json_keys" {
     )
     error_message = "JSON Keys' servers must use their CloudNativePG database by its certificate's name, and its gRPC server must verify this cluster's service tokens."
   }
-
-
 
   # The REST server reaches its database as one of its clients, and serves TLS for its Service's name.
   assert {
@@ -632,9 +618,10 @@ run "runs_authentication" {
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
       local.authentication_env.PLATFORM_AUTH_URL == "https://account.storyverse.fr" &&
+      local.authentication_env.REST_CLIENT_IP_HEADER == "X-Client-IP" &&
       can(regex("^https://script\\.google\\.com/macros/s/[A-Za-z0-9_-]+/exec$", local.authentication_env.WAITLIST_URL))
     )
-    error_message = "Authentication must use its CloudNativePG database by its certificate's name, send its mail with links to the account platform, and reach the invitation list as its Apps Script web app's exec address, the only shape it starts with."
+    error_message = "Authentication must use its CloudNativePG database by its certificate's name, send its mail with links to the account platform, trust the visitor IP the platforms forward, and reach the invitation list as its Apps Script web app's exec address, the only shape it starts with."
   }
 
   # A release without service tokens sends Google ID tokens when GCLOUD_PROJECT_ID is set, which
@@ -651,7 +638,6 @@ run "runs_authentication" {
     )
     error_message = "Authentication must call JSON Keys' server directly over TLS, as a caller JSON Keys admits, verifying the name its certificate carries."
   }
-
 
   # Several pods keep one budget per rate limit only through the counter store.
   assert {
@@ -788,7 +774,6 @@ run "runs_genai" {
     )
     error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep checks generations on its own ticker."
   }
-
 
   # Each peer of the metrics rule names its source range or namespace, and one of them only.
   assert {
@@ -971,7 +956,6 @@ run "runs_each_platform" {
     ])
     error_message = "Each platform must read JSON Keys' public keys from its REST server over TLS, by the name its certificate carries, through policies that let it reach and admit it."
   }
-
 }
 
 run "registers_every_other_platform_as_a_client" {

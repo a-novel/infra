@@ -10,20 +10,22 @@ locals {
   # verifies them against the services CA, which both read from SSL_CERT_FILE. A check takes its
   # service's name, and the check of a service's second API adds that API's workload.
   health_check_targets = {
-    authentication   = { service = "authentication", pods = "rest", audience = local.authentication_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
-    genai            = { service = "genai", pods = "grpc", audience = local.genai_grpc_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
-    json-keys        = { service = "json-keys", pods = "grpc", audience = local.json_keys_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
-    json-keys-rest   = { service = "json-keys", pods = "rest", audience = null, env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck", PUBLIC = "true" } }
-    narrative-engine = { service = "narrative-engine", pods = "rest", audience = local.narrative_engine_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
-    profile          = { service = "profile", pods = "rest", audience = local.profile_env.SERVICE_TOKEN_AUDIENCE, env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
+    authentication   = { service = "authentication", pods = "rest", env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck" } }
+    genai            = { service = "genai", pods = "grpc", env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.genai.v0.StatusService/Status" } }
+    json-keys        = { service = "json-keys", pods = "grpc", env = { PROTOCOL = "grpc", STATUS_RPC = "anovel.jsonkeys.v2.StatusService/Status" } }
+    json-keys-rest   = { service = "json-keys", pods = "rest", env = { PROTOCOL = "http", HEALTH_PATH = "/v2/healthcheck", PUBLIC = "true" } }
+    narrative-engine = { service = "narrative-engine", pods = "rest", env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
+    profile          = { service = "profile", pods = "rest", env = { PROTOCOL = "http", HEALTH_PATH = "/v1/healthcheck" } }
   }
+  # A check sends the token of its API's audience, its namespace, unless the API takes none (apis.tf).
   health_checks = { for name, target in local.health_check_targets : name => merge(target, {
+    audience = local.apis["${target.service}/${target.pods}"].tokens ? target.service : null
     image    = "${target.service}/${target.pods}"
     cron_job = name == target.service ? "health" : "health-${target.pods}"
     env = merge(target.env, local.downtime_env[target.service], {
       SERVICE_URL   = "https://${target.pods}.${target.service}.svc:${local.service_port}"
       SSL_CERT_FILE = "/etc/service-ca/ca.crt"
-    }, target.audience == null ? {} : { SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.audience}" })
+    }, local.apis["${target.service}/${target.pods}"].tokens ? { SERVICE_TOKEN_PATH = "/var/run/secrets/tokens/${target.service}" } : {})
   }) }
   # Each namespace's checks share its smoke identity and policy.
   health_check_namespaces = toset([for check in values(local.health_checks) : check.service])

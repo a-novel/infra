@@ -71,7 +71,8 @@ One pull request runs it:
   - `databases`, with `queries/<database>.yaml` and `queries/<database>.sql`, which the tests
     require;
   - the API it serves in `apis`, in `apis.tf`, with its callers: the table gives it its certificate,
-    its `SERVICE_TOKEN_CALLERS` and its network policy, and its callers their egress;
+    its network policy and its callers' egress, and its env sets
+    `SERVICE_TOKEN_CALLERS = local.token_callers["<namespace>/<workload>"]`;
   - its workloads through `modules/cluster-workload`, in `<service>.tf`;
   - for a platform, instead, its entry in `platforms`, in `platforms.tf`. The list runs its `web`
     workload behind its Gateway, and grants it what every platform shares: the calls to
