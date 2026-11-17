@@ -42,7 +42,7 @@ module "json_keys_grpc" {
   # which signs through it.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
+  depends_on = [module.migrations, kubernetes_manifest.secrets]
 }
 
 # The REST server reads the database, never the master key.
@@ -66,5 +66,5 @@ module "json_keys_rest" {
   # Two keep the keys served through a lost pod or node. A third, on CPU, absorbs a burst.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations]
+  depends_on = [module.migrations]
 }

@@ -41,5 +41,5 @@ module "profile_rest" {
   # since every platform calls it.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations]
+  depends_on = [module.migrations]
 }

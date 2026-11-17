@@ -49,124 +49,50 @@ locals {
   }
 }
 
-resource "kubernetes_cron_job_v1" "scheduled" {
+module "scheduled" {
+  source   = "../../../modules/cluster-job"
   for_each = var.custom_resources ? local.scheduled_jobs : {}
 
-  metadata {
-    name      = each.key
-    namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
-  }
+  name      = each.key
+  namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
+  schedule  = each.value.schedule
+  suspend   = each.value.suspend
+  # As the migrations' pods: the job reaches its database by the certificate's name.
+  labels = merge(local.database_clients, { "app.kubernetes.io/name" = each.key })
 
-  spec {
-    schedule           = each.value.schedule
-    suspend            = each.value.suspend
-    timezone           = "Etc/UTC"
-    concurrency_policy = "Forbid"
+  container_name = each.key
+  image          = local.release_image[each.value.image]
+  args           = each.value.args
+  # Each job runs one statement at a time, so one connection serves it.
+  env = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, local.telemetry_env[each.value.service].job, {
+    SSL_CERT_DIR            = "/etc/ssl/certs:/etc/database-ca"
+    POSTGRES_MAX_OPEN_CONNS = "1"
+  })
+  secret_env = [for name, ref in merge(local.database_secret_env, each.value.secret_env) : merge(ref, { name = name })]
+  ca_secret  = kubernetes_manifest.database_server_certificate[each.value.service].manifest.spec.secretName
+  resources  = { cpu = "100m", memory = "256Mi" }
 
-    # Kubernetes keeps the last failed run, and the CronJob the last successful one. Each kept run
-    # holds its pod and that pod's logs.
-    successful_jobs_history_limit = 1
+  active_deadline_seconds = 600
 
-    job_template {
-      metadata {}
+  depends_on = [module.migrations, kubernetes_manifest.secrets]
+}
 
-      spec {
-        backoff_limit           = 0
-        active_deadline_seconds = 600
+moved {
+  from = kubernetes_cron_job_v1.scheduled["rotate-keys"]
+  to   = module.scheduled["rotate-keys"].kubernetes_cron_job_v1.cron_job
+}
 
-        # As the migrations' pods: the job reaches its database by the certificate's name.
-        template {
-          metadata {
-            labels = merge(local.database_clients, { "app.kubernetes.io/name" = each.key })
-          }
+moved {
+  from = kubernetes_cron_job_v1.scheduled["refresh-token-purge"]
+  to   = module.scheduled["refresh-token-purge"].kubernetes_cron_job_v1.cron_job
+}
 
-          spec {
-            restart_policy                  = "Never"
-            automount_service_account_token = false
-            enable_service_links            = false
+moved {
+  from = kubernetes_cron_job_v1.scheduled["authorization-code-purge"]
+  to   = module.scheduled["authorization-code-purge"].kubernetes_cron_job_v1.cron_job
+}
 
-            security_context {
-              run_as_non_root = true
-              run_as_user     = 65532
-              run_as_group    = 65532
-
-              seccomp_profile {
-                type = "RuntimeDefault"
-              }
-            }
-
-            container {
-              name  = each.key
-              image = local.release_image[each.value.image]
-              args  = each.value.args
-
-              # Each job runs one statement at a time, so one connection serves it.
-              dynamic "env" {
-                for_each = merge(local.database_env[each.value.service], local.downtime_env[each.value.service], each.value.env, local.telemetry_env[each.value.service].job, {
-                  SSL_CERT_DIR            = "/etc/ssl/certs:/etc/database-ca"
-                  POSTGRES_MAX_OPEN_CONNS = "1"
-                })
-
-                content {
-                  name  = env.key
-                  value = env.value
-                }
-              }
-
-              dynamic "env" {
-                for_each = merge(local.database_secret_env, each.value.secret_env)
-
-                content {
-                  name = env.key
-
-                  value_from {
-                    secret_key_ref {
-                      name = env.value.secret
-                      key  = env.value.key
-                    }
-                  }
-                }
-              }
-
-              volume_mount {
-                name       = "database-ca"
-                mount_path = "/etc/database-ca"
-                read_only  = true
-              }
-
-              resources {
-                requests = { cpu = "100m", memory = "256Mi" }
-                limits   = { memory = "256Mi" }
-              }
-
-              security_context {
-                run_as_non_root            = true
-                allow_privilege_escalation = false
-                read_only_root_filesystem  = true
-
-                capabilities {
-                  drop = ["ALL"]
-                }
-              }
-            }
-
-            volume {
-              name = "database-ca"
-
-              secret {
-                secret_name = kubernetes_manifest.database_server_certificate[each.value.service].manifest.spec.secretName
-
-                items {
-                  key  = "ca.crt"
-                  path = "ca.crt"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
+moved {
+  from = kubernetes_cron_job_v1.scheduled["maintenance"]
+  to   = module.scheduled["maintenance"].kubernetes_cron_job_v1.cron_job
 }

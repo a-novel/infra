@@ -149,8 +149,8 @@ run "sends_every_signal_to_grafana_through_alloy" {
     condition = (
       local.alloy_values.clusterMetrics.cadvisor.extraMetricProcessingRules == local.health_run_rules &&
       local.alloy_values.clusterMetrics["kube-state-metrics"].extraMetricProcessingRules == local.health_run_rules &&
-      alltrue([for cron in kubernetes_cron_job_v1.health : can(regex("^${local.health_run}$", "${cron.metadata[0].name}-29386080"))]) &&
-      !anytrue([for cron in kubernetes_cron_job_v1.scheduled : can(regex("^${local.health_run}$", "${cron.metadata[0].name}-29386080"))])
+      alltrue([for health in module.health : can(regex("^${local.health_run}$", "${health.cron_job.metadata[0].name}-29386080"))]) &&
+      !anytrue([for scheduled in module.scheduled : can(regex("^${local.health_run}$", "${scheduled.cron_job.metadata[0].name}-29386080"))])
     )
     error_message = "Alloy must drop the series of every health check run, and of no other scheduled job's."
   }
@@ -244,8 +244,8 @@ run "sends_every_signal_to_grafana_through_alloy" {
       { env = local.genai_sweep_env, kind = "job" },
       { env = local.narrative_engine_env, kind = "api" },
       { env = local.profile_env, kind = "api" },
-      { env = { for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
-      { env = { for env in one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
+      { env = { for env in one(module.scheduled["rotate-keys"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
+      { env = { for env in one(module.scheduled["refresh-token-purge"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, kind = "job" },
       ], [for env in values(local.platform_env) : { env = env, kind = "api" }]) :
       workload.env.OTEL == "true" &&
       workload.env.OTEL_EXPORTER_OTLP_ENDPOINT == "http://${one(keys(local.alloy_values.collectors))}.${helm_release.alloy.namespace}.svc:${local.alloy_values.applicationObservability.receivers.otlp.http.port}" &&
@@ -290,12 +290,12 @@ run "keeps_each_database_available_and_backed_up" {
   }
 
   assert {
-    condition = toset(keys(kubernetes_job_v1.database_grants)) == toset(keys(kubernetes_config_map_v1.database_queries)) && alltrue([for service, job in kubernetes_job_v1.database_grants :
-      job.wait_for_completion &&
-      one(job.spec[0].template[0].spec[0].container).command == tolist(["psql", "--no-psqlrc", "--command", file("queries/${service}.sql")]) &&
+    condition = toset(keys(module.database_grants)) == toset(keys(kubernetes_config_map_v1.database_queries)) && alltrue([for service, grants in module.database_grants :
+      grants.job.wait_for_completion &&
+      one(grants.job.spec[0].template[0].spec[0].container).command == tolist(["psql", "--no-psqlrc", "--command", file("queries/${service}.sql")]) &&
       alltrue([for statement in regexall("GRANT[^;]*;", file("queries/${service}.sql")) : can(regex("^GRANT SELECT \\([a-z_, ]+\\) ON [a-z_]+ TO cnpg_metrics_exporter;$", statement))]) &&
-      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGSSLMODE"]) == "verify-full" &&
-      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGHOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
+      one([for env in one(grants.job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGSSLMODE"]) == "verify-full" &&
+      one([for env in one(grants.job.spec[0].template[0].spec[0].container).env : env.value if env.name == "PGHOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
     ])
     error_message = "Each database must grant CloudNativePG's exporter only the columns its queries read, over verified TLS."
   }
@@ -394,8 +394,8 @@ run "fits_each_database_in_its_connections" {
       narrative-engine = tonumber(local.narrative_engine_env.POSTGRES_MAX_OPEN_CONNS) * (module.narrative_engine_rest.autoscaler.spec.max_replicas + 1)
       profile          = tonumber(local.profile_env.POSTGRES_MAX_OPEN_CONNS) * (module.profile_rest.autoscaler.spec.max_replicas + 1)
       } : workloads + 2 + sum(concat(
-        [one([for env in one(kubernetes_job_v1.migrations[database].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"])],
-        [for name, job in kubernetes_cron_job_v1.scheduled : one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"]) if local.scheduled_jobs[name].service == database],
+        [one([for env in one(module.migrations[database].job.spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"])],
+        [for name, scheduled in module.scheduled : one([for env in one(scheduled.cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : tonumber(env.value) if env.name == "POSTGRES_MAX_OPEN_CONNS"]) if local.scheduled_jobs[name].service == database],
       )) <= var.databases[database].max_connections - 3
     ])
     error_message = "Each database must hold every workload at its maximum with a surge pod, every job, the grants Job and the metrics exporter at once, within its connections less the superuser slots."
@@ -419,26 +419,24 @@ run "runs_each_release_from_its_private_repository" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.migrations)) == toset(keys(var.databases)) &&
-      alltrue([for service, job in kubernetes_job_v1.migrations :
-        startswith(job.metadata[0].name, "migrations-${substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)}-") &&
-        endswith(job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
-        job.wait_for_completion &&
-        job.spec[0].backoff_limit == 0 &&
-        job.spec[0].active_deadline_seconds < tonumber(trimsuffix(job.timeouts.create, "m")) * 60 &&
-        !job.spec[0].template[0].spec[0].enable_service_links &&
-        one(one(job.spec[0].template[0].spec[0].container).security_context).run_as_non_root
+      toset(keys(module.migrations)) == toset(keys(var.databases)) &&
+      alltrue([for service, migrations in module.migrations :
+        startswith(migrations.job.metadata[0].name, "migrations-${substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)}-") &&
+        endswith(migrations.job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
+        migrations.job.wait_for_completion &&
+        migrations.job.spec[0].backoff_limit == 0 &&
+        migrations.job.spec[0].active_deadline_seconds < tonumber(trimsuffix(migrations.job.timeouts.create, "m")) * 60
       ])
     )
     error_message = "Each service's migrations must run once per image and per database lineage, to completion, before its server rolls, and end before the deploy stops waiting on them."
   }
 
   assert {
-    condition = alltrue([for service, job in kubernetes_job_v1.migrations :
-      one(one(job.spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[service].manifest.spec.secretName &&
-      [for item in one(one(job.spec[0].template[0].spec[0].volume).secret).items : item.key] == ["ca.crt"] &&
-      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(job.spec[0].template[0].spec[0].container).volume_mount).mount_path}" &&
-      one([for env in one(job.spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
+    condition = alltrue([for service, migrations in module.migrations :
+      one(one(migrations.job.spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[service].manifest.spec.secretName &&
+      [for item in one(one(migrations.job.spec[0].template[0].spec[0].volume).secret).items : item.key] == ["ca.crt"] &&
+      one([for env in one(migrations.job.spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:${one(one(migrations.job.spec[0].template[0].spec[0].container).volume_mount).mount_path}" &&
+      one([for env in one(migrations.job.spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[service].manifest.spec.dnsNames)
     ])
     error_message = "The migrations must reach their own database by its certificate's name, trusting only its CA certificate beside the system roots."
   }
@@ -449,12 +447,12 @@ run "schedules_the_recurring_jobs" {
 
   assert {
     condition = (
-      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if job.spec[0].suspend]) == toset(["maintenance"]) &&
-      alltrue([for job in kubernetes_cron_job_v1.scheduled :
-        job.spec[0].timezone == "Etc/UTC" &&
-        job.spec[0].concurrency_policy == "Forbid" &&
-        job.spec[0].successful_jobs_history_limit == 1 &&
-        job.spec[0].job_template[0].spec[0].backoff_limit == 0
+      toset([for name, scheduled in module.scheduled : name if scheduled.cron_job.spec[0].suspend]) == toset(["maintenance"]) &&
+      alltrue([for scheduled in module.scheduled :
+        scheduled.cron_job.spec[0].timezone == "Etc/UTC" &&
+        scheduled.cron_job.spec[0].concurrency_policy == "Forbid" &&
+        scheduled.cron_job.spec[0].successful_jobs_history_limit == 1 &&
+        scheduled.cron_job.spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
     error_message = "Every scheduled job but the maintenance template must run on its schedule, in UTC, one run at a time, never retried, keeping only the last successful run."
@@ -462,26 +460,26 @@ run "schedules_the_recurring_jobs" {
 
   assert {
     condition = (
-      kubernetes_cron_job_v1.scheduled["rotate-keys"].metadata[0].namespace == "json-keys" &&
-      one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["json-keys/rotatekeys"] &&
-      one([for env in one(kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : "${one(one(env.value_from).secret_key_ref).name}/${one(one(env.value_from).secret_key_ref).key}" if env.name == "APP_MASTER_KEY"]) == "secrets/APP_MASTER_KEY" &&
-      kubernetes_cron_job_v1.scheduled["refresh-token-purge"].metadata[0].namespace == "authentication" &&
-      one(kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+      module.scheduled["rotate-keys"].cron_job.metadata[0].namespace == "json-keys" &&
+      one(module.scheduled["rotate-keys"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["json-keys/rotatekeys"] &&
+      one([for env in one(module.scheduled["rotate-keys"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : "${one(one(env.value_from).secret_key_ref).name}/${one(one(env.value_from).secret_key_ref).key}" if env.name == "APP_MASTER_KEY"]) == "secrets/APP_MASTER_KEY" &&
+      module.scheduled["refresh-token-purge"].cron_job.metadata[0].namespace == "authentication" &&
+      one(module.scheduled["refresh-token-purge"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
       alltrue([for purge in ["refresh-token-purge", "authorization-code-purge"] :
-        kubernetes_cron_job_v1.scheduled[purge].metadata[0].namespace == "authentication" &&
-        one(kubernetes_cron_job_v1.scheduled[purge].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
-        one(kubernetes_cron_job_v1.scheduled[purge].spec[0].job_template[0].spec[0].template[0].spec[0].container).args == tolist([purge])
+        module.scheduled[purge].cron_job.metadata[0].namespace == "authentication" &&
+        one(module.scheduled[purge].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+        one(module.scheduled[purge].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).args == tolist([purge])
       ])
     )
     error_message = "Key rotation must run JSON Keys' rotatekeys image with its master key, and each purge Authentication's maintenance image with the purge's operation."
   }
 
   assert {
-    condition = alltrue([for name, job in kubernetes_cron_job_v1.scheduled :
-      job.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["a-novel.io/database"] == "client" &&
-      one(one(job.spec[0].job_template[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.secretName &&
-      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.dnsNames) &&
-      one([for env in one(job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca"
+    condition = alltrue([for name, scheduled in module.scheduled :
+      scheduled.cron_job.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["a-novel.io/database"] == "client" &&
+      one(one(scheduled.cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].volume).secret).secret_name == kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.secretName &&
+      one([for env in one(scheduled.cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "POSTGRES_HOST"]) == one(kubernetes_manifest.database_server_certificate[local.scheduled_jobs[name].service].manifest.spec.dnsNames) &&
+      one([for env in one(scheduled.cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.value if env.name == "SSL_CERT_DIR"]) == "/etc/ssl/certs:/etc/database-ca"
     ])
     error_message = "Each scheduled job must reach its own database as a client, by its certificate's name, trusting its CA."
   }
@@ -1045,17 +1043,17 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   assert {
     condition = (
-      toset([for name in keys(kubernetes_job_v1.smoke) : "${local.health_checks[name].service}/${local.health_checks[name].pods}"]) == toset(keys(local.apis)) &&
-      toset(keys(kubernetes_cron_job_v1.health)) == toset(keys(kubernetes_job_v1.smoke)) &&
-      length(distinct([for cron in kubernetes_cron_job_v1.health : "${cron.metadata[0].namespace}/${cron.metadata[0].name}"])) == length(kubernetes_cron_job_v1.health) &&
-      alltrue([for name, job in kubernetes_job_v1.smoke :
-        job.wait_for_completion &&
-        job.spec[0].backoff_limit == 0 &&
-        one(job.spec[0].template[0].spec[0].container).args == tolist(["-c", file("../../../modules/smoke-check/smoke.sh")]) &&
-        kubernetes_cron_job_v1.health[name].spec[0].schedule == "*/5 * * * *" &&
-        kubernetes_cron_job_v1.health[name].spec[0].concurrency_policy == "Forbid" &&
-        kubernetes_cron_job_v1.health[name].spec[0].successful_jobs_history_limit == 1 &&
-        kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].backoff_limit == 0
+      toset([for name in keys(module.smoke) : "${local.health_checks[name].service}/${local.health_checks[name].pods}"]) == toset(keys(local.apis)) &&
+      toset(keys(module.health)) == toset(keys(module.smoke)) &&
+      length(distinct([for health in module.health : "${health.cron_job.metadata[0].namespace}/${health.cron_job.metadata[0].name}"])) == length(module.health) &&
+      alltrue([for name, smoke in module.smoke :
+        smoke.job.wait_for_completion &&
+        smoke.job.spec[0].backoff_limit == 0 &&
+        one(smoke.job.spec[0].template[0].spec[0].container).args == tolist(["-c", file("../../../modules/smoke-check/smoke.sh")]) &&
+        module.health[name].cron_job.spec[0].schedule == "*/5 * * * *" &&
+        module.health[name].cron_job.spec[0].concurrency_policy == "Forbid" &&
+        module.health[name].cron_job.spec[0].successful_jobs_history_limit == 1 &&
+        module.health[name].cron_job.spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
     error_message = "Each service API must get a smoke Job, which the deploy waits on, and a health CronJob of its own every five minutes keeping only its last successful run, both running the shared check once per run."
@@ -1063,11 +1061,11 @@ run "checks_each_service_as_a_caller_it_admits" {
 
   # Each Job's name follows what its pod runs, so a new image, script or setting runs it again.
   assert {
-    condition = alltrue([for service, job in kubernetes_job_v1.smoke :
-      job.metadata[0].name == "smoke-${substr(sha256(jsonencode([
-        one(job.spec[0].template[0].spec[0].container).image,
-        { for env in one(job.spec[0].template[0].spec[0].container).env : env.name => env.value },
-        one(job.spec[0].template[0].spec[0].container).args[1],
+    condition = alltrue([for service, smoke in module.smoke :
+      smoke.job.metadata[0].name == "smoke-${substr(sha256(jsonencode([
+        one(smoke.job.spec[0].template[0].spec[0].container).image,
+        { for env in one(smoke.job.spec[0].template[0].spec[0].container).env : env.name => env.value },
+        one(smoke.job.spec[0].template[0].spec[0].container).args[1],
       ])), 0, 12)}"
     ])
     error_message = "Each smoke Job's name must change with its image, its settings and the script."
@@ -1081,9 +1079,9 @@ run "checks_each_service_as_a_caller_it_admits" {
       json-keys-rest   = { namespace = "json-keys", workload = module.json_keys_rest, policy = kubernetes_network_policy_v1.api["json-keys/rest"] }
       narrative-engine = { namespace = "narrative-engine", workload = module.narrative_engine_rest, policy = kubernetes_network_policy_v1.api["narrative-engine/rest"] }
       profile          = { namespace = "profile", workload = module.profile_rest, policy = kubernetes_network_policy_v1.api["profile/rest"] }
-      } : alltrue([for pod in [kubernetes_job_v1.smoke[name].spec[0].template[0], kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].template[0]] : (
-        kubernetes_job_v1.smoke[name].metadata[0].namespace == target.namespace &&
-        kubernetes_cron_job_v1.health[name].metadata[0].namespace == target.namespace &&
+      } : alltrue([for pod in [module.smoke[name].job.spec[0].template[0], module.health[name].cron_job.spec[0].job_template[0].spec[0].template[0]] : (
+        module.smoke[name].job.metadata[0].namespace == target.namespace &&
+        module.health[name].cron_job.metadata[0].namespace == target.namespace &&
         one(pod.spec[0].container).image == local.release_image["${target.namespace}/${target.workload.service.name}"] &&
         { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_URL"] == "https://${target.workload.service.name}.${target.namespace}.svc:${target.workload.service.port}" &&
         { for env in one(pod.spec[0].container).env : env.name => env.value }["SSL_CERT_FILE"] == "${one([for mount in one(pod.spec[0].container).volume_mount : mount.mount_path if mount.name == "service-ca"])}/ca.crt" &&
@@ -1105,8 +1103,8 @@ run "checks_each_service_as_a_caller_it_admits" {
       json-keys        = local.json_keys_env
       narrative-engine = local.narrative_engine_env
       profile          = local.profile_env
-      } : alltrue([for pod in [kubernetes_job_v1.smoke[name].spec[0].template[0], kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].template[0]] : (
-        contains(split(",", settings.SERVICE_TOKEN_CALLERS), "system:serviceaccount:${kubernetes_job_v1.smoke[name].metadata[0].namespace}:${pod.spec[0].service_account_name}") &&
+      } : alltrue([for pod in [module.smoke[name].job.spec[0].template[0], module.health[name].cron_job.spec[0].job_template[0].spec[0].template[0]] : (
+        contains(split(",", settings.SERVICE_TOKEN_CALLERS), "system:serviceaccount:${module.smoke[name].job.metadata[0].namespace}:${pod.spec[0].service_account_name}") &&
         one([for volume in pod.spec[0].volume : one(one(one(volume.projected).sources).service_account_token).audience if volume.name == "service-token"]) == settings.SERVICE_TOKEN_AUDIENCE &&
         { for env in one(pod.spec[0].container).env : env.name => env.value }["SERVICE_TOKEN_PATH"] == "/var/run/secrets/tokens/${settings.SERVICE_TOKEN_AUDIENCE}"
       )])
@@ -1115,7 +1113,7 @@ run "checks_each_service_as_a_caller_it_admits" {
   }
 
   assert {
-    condition = alltrue([for pod in [kubernetes_job_v1.smoke["json-keys-rest"].spec[0].template[0], kubernetes_cron_job_v1.health["json-keys-rest"].spec[0].job_template[0].spec[0].template[0]] : (
+    condition = alltrue([for pod in [module.smoke["json-keys-rest"].job.spec[0].template[0], module.health["json-keys-rest"].cron_job.spec[0].job_template[0].spec[0].template[0]] : (
       { for env in one(pod.spec[0].container).env : env.name => env.value }["PUBLIC"] == "true" &&
       !contains([for env in one(pod.spec[0].container).env : env.name], "SERVICE_TOKEN_PATH") &&
       !contains([for volume in pod.spec[0].volume : volume.name], "service-token") &&
@@ -1133,9 +1131,9 @@ run "skips_the_checks_during_a_planned_downtime" {
   }
 
   assert {
-    condition = alltrue([for name, job in kubernetes_job_v1.smoke :
-      lookup({ for env in one(job.spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (job.metadata[0].namespace == "json-keys" ? "2026-11-02T06:00:00Z" : null) &&
-      lookup({ for env in one(kubernetes_cron_job_v1.health[name].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (job.metadata[0].namespace == "json-keys" ? "2026-11-02T06:00:00Z" : null)
+    condition = alltrue([for name, smoke in module.smoke :
+      lookup({ for env in one(smoke.job.spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (smoke.job.metadata[0].namespace == "json-keys" ? "2026-11-02T06:00:00Z" : null) &&
+      lookup({ for env in one(module.health[name].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }, "DOWNTIME_START", null) == (smoke.job.metadata[0].namespace == "json-keys" ? "2026-11-02T06:00:00Z" : null)
     ])
     error_message = "A planned downtime must reach only its own service's checks, which skip from its start."
   }
@@ -1146,14 +1144,14 @@ run "lets_only_the_named_operators_run_maintenance" {
 
   assert {
     condition = (
-      kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].namespace == "authentication" &&
-      kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].suspend &&
-      kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].active_deadline_seconds >= tonumber(trimsuffix(local.authentication_mail_env.SMTP_TIMEOUT, "s")) + 180 &&
-      one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
-      length(one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).args) == 0 &&
-      contains(kubernetes_manifest.internet_egress["smtp-relay"].manifest.spec.podSelector.matchExpressions[0].values, kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"]) &&
+      module.scheduled["maintenance"].cron_job.metadata[0].namespace == "authentication" &&
+      module.scheduled["maintenance"].cron_job.spec[0].suspend &&
+      module.scheduled["maintenance"].cron_job.spec[0].job_template[0].spec[0].active_deadline_seconds >= tonumber(trimsuffix(local.authentication_mail_env.SMTP_TIMEOUT, "s")) + 180 &&
+      one(module.scheduled["maintenance"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).image == local.release_image["authentication/maintenance"] &&
+      length(one(module.scheduled["maintenance"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).args) == 0 &&
+      contains(kubernetes_manifest.internet_egress["smtp-relay"].manifest.spec.podSelector.matchExpressions[0].values, module.scheduled["maintenance"].cron_job.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"]) &&
       alltrue([for name, value in local.authentication_mail_env :
-        { for env in one(kubernetes_cron_job_v1.scheduled["maintenance"].spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }[name] == local.authentication_env[name]
+        { for env in one(module.scheduled["maintenance"].cron_job.spec[0].job_template[0].spec[0].template[0].spec[0].container).env : env.name => env.value }[name] == local.authentication_env[name]
       ])
     )
     error_message = "The maintenance template must never run on its own, run Authentication's maintenance image with no operation, and send the API's mail through the relay within SMTP_TIMEOUT, with room for the exit."
@@ -1167,7 +1165,7 @@ run "lets_only_the_named_operators_run_maintenance" {
         !contains(rule.resources, "secrets") &&
         length(setsubtract(rule.verbs, ["create", "delete", "get", "list", "watch"])) == 0 &&
         (length(setintersection(rule.verbs, ["create", "delete"])) == 0 || toset(rule.resources) == toset(["jobs"])) &&
-        (!contains(rule.resources, "cronjobs") || toset(rule.resource_names) == toset([kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].name]))
+        (!contains(rule.resources, "cronjobs") || toset(rule.resource_names) == toset([module.scheduled["maintenance"].cron_job.metadata[0].name]))
       ])
     )
     error_message = "Only foundation's maintenance principals may read the maintenance template and create and delete Jobs in Authentication's namespace, never read its Secrets, and change nothing else."
@@ -1180,8 +1178,8 @@ run "lets_only_the_named_operators_run_maintenance" {
       length(setsubtract(["initContainers", "volumes", "serviceAccountName", "automountServiceAccountToken", "containers[0].image", "containers[0].command", "containers[0].env", "containers[0].envFrom", "containers[0].volumeMounts", "containers[0].lifecycle", "containers[0].livenessProbe", "containers[0].readinessProbe", "containers[0].startupProbe"], local.maintenance_kept_fields)) == 0 &&
       kubernetes_manifest.maintenance_policy_binding.manifest.spec.validationActions == ["Deny"] &&
       kubernetes_manifest.maintenance_policy_binding.manifest.spec.paramRef == {
-        name                    = kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].name
-        namespace               = kubernetes_cron_job_v1.scheduled["maintenance"].metadata[0].namespace
+        name                    = module.scheduled["maintenance"].cron_job.metadata[0].name
+        namespace               = module.scheduled["maintenance"].cron_job.metadata[0].namespace
         parameterNotFoundAction = "Deny"
       }
     )

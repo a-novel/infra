@@ -59,5 +59,5 @@ module "narrative_engine_rest" {
   replicas = { min = 2, max = 3 }
 
   # Its pods read the limiter's password as they start.
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.counter_store_users]
+  depends_on = [module.migrations, kubernetes_manifest.counter_store_users]
 }

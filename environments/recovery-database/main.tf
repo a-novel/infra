@@ -178,120 +178,31 @@ resource "kubernetes_manifest" "database" {
 # CloudNativePG generated for the restore, over TLS it verifies against the database's own CA, and
 # fails the apply at the first difference. Its log, which recovery.yaml prints, counts each table's
 # rows.
-resource "kubernetes_job_v1" "check" {
+module "check" {
+  source   = "../../modules/cluster-job"
   for_each = var.recovery.services
 
-  metadata {
-    name      = "check"
-    namespace = kubernetes_namespace_v1.drill[each.key].metadata[0].name
+  name      = "check"
+  namespace = kubernetes_namespace_v1.drill[each.key].metadata[0].name
+  # The PostgreSQL image's own unprivileged user.
+  user = 999
+
+  container_name = "check"
+  image          = one(kubernetes_manifest.image[each.key].manifest.spec.images).image
+  command        = ["sh", "-c", file("${path.module}/check.sh"), "check", templatefile("${path.module}/check.sql.tftpl", { extensions = local.production.databases[each.key].extensions })]
+  env = {
+    PGHOST        = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-rw.${kubernetes_namespace_v1.drill[each.key].metadata[0].name}.svc"
+    PGDATABASE    = kubernetes_manifest.database[each.key].manifest.spec.bootstrap.recovery.database
+    PGSSLMODE     = "verify-full"
+    PGSSLROOTCERT = "/etc/database-ca/ca.crt"
   }
+  secret_env = [
+    { name = "PGUSER", secret = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app", key = "username" },
+    { name = "PGPASSWORD", secret = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app", key = "password" },
+  ]
+  ca_secret = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-ca"
+  resources = { cpu = "100m", memory = "128Mi" }
 
-  spec {
-    backoff_limit           = 0
-    active_deadline_seconds = 300
-
-    template {
-      metadata {}
-
-      spec {
-        restart_policy                  = "Never"
-        automount_service_account_token = false
-        enable_service_links            = false
-
-        security_context {
-          run_as_non_root = true
-          run_as_user     = 999
-          run_as_group    = 999
-
-          seccomp_profile {
-            type = "RuntimeDefault"
-          }
-        }
-
-        container {
-          name    = "check"
-          image   = one(kubernetes_manifest.image[each.key].manifest.spec.images).image
-          command = ["sh", "-c", file("${path.module}/check.sh"), "check", templatefile("${path.module}/check.sql.tftpl", { extensions = local.production.databases[each.key].extensions })]
-
-          dynamic "env" {
-            for_each = {
-              PGHOST        = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-rw.${kubernetes_namespace_v1.drill[each.key].metadata[0].name}.svc"
-              PGDATABASE    = kubernetes_manifest.database[each.key].manifest.spec.bootstrap.recovery.database
-              PGSSLMODE     = "verify-full"
-              PGSSLROOTCERT = "/etc/database-ca/ca.crt"
-            }
-
-            content {
-              name  = env.key
-              value = env.value
-            }
-          }
-
-          env {
-            name = "PGUSER"
-
-            value_from {
-              secret_key_ref {
-                name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app"
-                key  = "username"
-              }
-            }
-          }
-
-          env {
-            name = "PGPASSWORD"
-
-            value_from {
-              secret_key_ref {
-                name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-app"
-                key  = "password"
-              }
-            }
-          }
-
-          volume_mount {
-            name       = "database-ca"
-            mount_path = "/etc/database-ca"
-            read_only  = true
-          }
-
-          resources {
-            requests = { cpu = "100m", memory = "128Mi" }
-            limits   = { memory = "128Mi" }
-          }
-
-          # The provider sends runAsNonRoot=false for a container that leaves it unset, which
-          # overrides the pod's and fails Pod Security.
-          security_context {
-            run_as_non_root            = true
-            allow_privilege_escalation = false
-            read_only_root_filesystem  = true
-
-            capabilities {
-              drop = ["ALL"]
-            }
-          }
-        }
-
-        volume {
-          name = "database-ca"
-
-          secret {
-            secret_name = "${kubernetes_manifest.database[each.key].manifest.metadata.name}-ca"
-
-            items {
-              key  = "ca.crt"
-              path = "ca.crt"
-            }
-          }
-        }
-      }
-    }
-  }
-
-  wait_for_completion = true
-
-  timeouts {
-    create = "6m"
-  }
+  active_deadline_seconds = 300
+  timeout                 = "6m"
 }
