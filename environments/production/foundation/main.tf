@@ -29,7 +29,6 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "certificatemanager.googleapis.com",
-    "cloudscheduler.googleapis.com",
     "cloudquotas.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "cloudtrace.googleapis.com",
@@ -42,7 +41,6 @@ locals {
     "monitoring.googleapis.com",
     "networksecurity.googleapis.com",
     "oslogin.googleapis.com",
-    "run.googleapis.com",
     "serviceusage.googleapis.com",
     "telemetry.googleapis.com",
   ])
@@ -82,9 +80,7 @@ resource "google_project_service" "workload" {
   project = google_project.workload.project_id
   service = each.value
 
-  # Removing code must not disable an API that a recovery path still needs. Cloud Run and Cloud
-  # Scheduler served the services and jobs the cluster replaced (#1390), so the change that removes
-  # them disables them.
+  # Removing code must not disable an API that a recovery path still needs.
   disable_dependent_services = false
-  disable_on_destroy         = contains(["cloudscheduler.googleapis.com", "run.googleapis.com"], each.value)
+  disable_on_destroy         = false
 }
