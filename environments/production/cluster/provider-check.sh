@@ -1,9 +1,8 @@
 #!/bin/sh
 
 # GenAI's provider check makes one real OpenAI call through the cluster's GenAI. It submits one small
-# generation, polls it until it settles, and fails unless the generation succeeds. The cluster's sweep
-# checks nothing, so the polls drive the generation: a poll checks it with OpenAI once GenAI's
-# CHECK_INTERVAL has passed since the last check.
+# generation, polls it until it settles, and fails unless the generation succeeds. Each poll of an
+# unsettled generation asks OpenAI, so the check settles within a poll of OpenAI finishing.
 #
 #   SERVICE_URL         GenAI's gRPC server, as https://<host>:<port>.
 #   SERVICE_TOKEN_PATH  the file the kubelet projects GenAI's service token into.

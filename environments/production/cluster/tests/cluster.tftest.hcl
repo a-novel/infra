@@ -767,10 +767,9 @@ run "runs_genai" {
   assert {
     condition = (
       local.genai_secret_env.OPENAI_API_KEY.secret == "secrets" &&
-      contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key) &&
-      local.genai_sweep_env.SWEEP_TICKER == "true"
+      contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key)
     )
-    error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep checks generations on its own ticker."
+    error_message = "Both read OpenAI's key from the namespace's synced secrets."
   }
 
   # Each peer of the metrics rule names its source range or namespace, and one of them only.
