@@ -51,8 +51,9 @@ upgrade whose downtime has since started.
 1. **The release opens its pull request.** Once a service's release workflow has published every
    image, it dispatches `pin-release.yaml`. That workflow opens one pull request per service, on
    `chore/deps/<repository>`, titled like `chore(deps): update service-json-keys images to v2.10.0`.
-   It moves every `tag@digest` pin of the service's images in its root's `terraform.tfvars`. A
-   newer release of the same service replaces the open pull request's content.
+   It moves every `tag@digest` pin of the service's images in the cluster root's
+   `releases/<service>.tfvars`. A newer release of the same service replaces the open pull
+   request's content.
 2. **CI plans it.** In `plan-cluster`, expect:
    - the workloads and CronJobs on the new images;
    - when the migrations image changed, a new `migrations-<digest>` Job, and the `database-grants`

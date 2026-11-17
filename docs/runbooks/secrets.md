@@ -2,7 +2,7 @@
 
 This runbook is about secret values. OpenTofu manages the secret containers, in the management
 project. Humans add their values with `gcloud`, so the values never reach state, plans or Git. Each
-workload reads the numeric version its root's `terraform.tfvars` pins, so a new value takes effect
+workload reads the numeric version its `releases/<service>.tfvars` pins, so a new value takes effect
 only once a pull request pins it. External Secrets copies each pinned version into the namespace's
 `secrets` Secret, and a pod reads it when it starts.
 
