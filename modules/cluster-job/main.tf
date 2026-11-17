@@ -8,8 +8,11 @@ locals {
   )
 }
 
-# One run, which the apply waits on. A finished Job stays as its record. A failed one fails the apply
-# and stays tainted, so the next apply runs it again.
+# One run, which the apply waits on. A finished Job stays as its record. A failed one fails the
+# apply and stays tainted, so the next apply runs it again. A created Job keeps its pods: the
+# provider plans a template change in place but never sends it, so a change here reaches only the
+# Jobs created after it, under a new name. The CronJob below repeats these pods, and
+# tests/job.tftest.hcl keeps the two equal.
 resource "kubernetes_job_v1" "job" {
   lifecycle { enabled = var.schedule == null }
 

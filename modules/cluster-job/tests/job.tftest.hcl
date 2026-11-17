@@ -122,3 +122,23 @@ run "refuses_an_image_without_a_digest" {
 
   expect_failures = [var.image]
 }
+
+run "refuses_a_job_the_apply_stops_waiting_on" {
+  command = plan
+
+  variables {
+    timeout = null
+  }
+
+  expect_failures = [var.timeout]
+}
+
+run "refuses_a_timeout_no_longer_than_the_deadline" {
+  command = plan
+
+  variables {
+    timeout = "5m"
+  }
+
+  expect_failures = [var.timeout]
+}

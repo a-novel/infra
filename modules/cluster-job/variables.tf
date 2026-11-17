@@ -119,7 +119,14 @@ variable "active_deadline_seconds" {
 }
 
 variable "timeout" {
-  description = "How long the apply waits for the Job to complete, as a duration such as 6m. A CronJob takes none."
+  description = "How long the apply waits for the Job to complete, in minutes such as 6m. A CronJob takes none."
   type        = string
   default     = null
+
+  # The provider waits one minute by default. A Job that outlives the wait stays tainted and
+  # running, and the next apply's replacement kills its pod mid-run (a-novel/infra#1596).
+  validation {
+    condition     = var.schedule != null || try(tonumber(trimsuffix(var.timeout, "m")) * 60 > var.active_deadline_seconds, false)
+    error_message = "A Job's timeout, in minutes, must outlast its deadline, so the apply never stops waiting on a running Job."
+  }
 }
