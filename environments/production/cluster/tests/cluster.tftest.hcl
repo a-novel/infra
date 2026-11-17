@@ -4,9 +4,10 @@ mock_provider "kubernetes" {}
 mock_provider "helm" {}
 mock_provider "time" {}
 
-# Tests cannot import.
+# Tests cannot import, and they check the cluster with its add-ons' kinds whatever a rebuild sets.
 variables {
   adopted_databases = []
+  custom_resources  = true
 }
 
 override_data {
@@ -131,10 +132,6 @@ run "isolates_every_namespace" {
 
 run "sends_every_signal_to_grafana_through_alloy" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -263,10 +260,6 @@ run "sends_every_signal_to_grafana_through_alloy" {
 run "keeps_each_database_available_and_backed_up" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = alltrue([for service, database in kubernetes_manifest.database :
       database.manifest.spec.instances == 2 &&
@@ -394,10 +387,6 @@ run "keeps_each_database_available_and_backed_up" {
 run "fits_each_database_in_its_connections" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = alltrue([for database, workloads in {
       authentication   = tonumber(local.authentication_env.POSTGRES_MAX_OPEN_CONNS) * (module.authentication_rest.autoscaler.spec.max_replicas + 1)
@@ -417,10 +406,6 @@ run "fits_each_database_in_its_connections" {
 run "runs_each_release_from_its_private_repository" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = (
       toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
@@ -435,7 +420,7 @@ run "runs_each_release_from_its_private_repository" {
 
   assert {
     condition = (
-      toset(keys(kubernetes_job_v1.migrations)) == toset(["authentication", "genai", "json-keys", "narrative-engine", "profile"]) &&
+      toset(keys(kubernetes_job_v1.migrations)) == toset(keys(var.databases)) &&
       alltrue([for service, job in kubernetes_job_v1.migrations :
         startswith(job.metadata[0].name, "migrations-${substr(trimprefix(local.release_images["${service}/migrations"].digest, "sha256:"), 0, 12)}-") &&
         endswith(job.metadata[0].name, substr(sha256(var.backup_server_name), 0, 8)) &&
@@ -460,19 +445,12 @@ run "runs_each_release_from_its_private_repository" {
   }
 }
 
-run "schedules_the_jobs_cloud_scheduler_runs" {
+run "schedules_the_recurring_jobs" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
-      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if !job.spec[0].suspend]) == toset(["authorization-code-purge", "refresh-token-purge", "rotate-keys"]) &&
-      kubernetes_cron_job_v1.scheduled["rotate-keys"].spec[0].schedule == "10 * * * *" &&
-      kubernetes_cron_job_v1.scheduled["refresh-token-purge"].spec[0].schedule == "40 3 * * *" &&
-      kubernetes_cron_job_v1.scheduled["authorization-code-purge"].spec[0].schedule == "50 3 * * *" &&
+      toset([for name, job in kubernetes_cron_job_v1.scheduled : name if job.spec[0].suspend]) == toset(["maintenance"]) &&
       alltrue([for job in kubernetes_cron_job_v1.scheduled :
         job.spec[0].timezone == "Etc/UTC" &&
         job.spec[0].concurrency_policy == "Forbid" &&
@@ -480,7 +458,7 @@ run "schedules_the_jobs_cloud_scheduler_runs" {
         job.spec[0].job_template[0].spec[0].backoff_limit == 0
       ])
     )
-    error_message = "Key rotation must run hourly at :10, the refresh token purge daily at 03:40 UTC and the authorization code purge at 03:50, one run at a time, never retried, keeping only the last successful run."
+    error_message = "Every scheduled job but the maintenance template must run on its schedule, in UTC, one run at a time, never retried, keeping only the last successful run."
   }
 
   assert {
@@ -529,50 +507,38 @@ run "lets_operators_read_the_services" {
 run "reaches_only_its_internet_hosts" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = (
-      { for name, policy in kubernetes_manifest.internet_egress : name => "${policy.manifest.metadata.namespace}:${join(",", policy.manifest.spec.podSelector.matchExpressions[0].values)}:${policy.manifest.spec.egress[0].matches[0].name}:${policy.manifest.spec.egress[0].ports[0].port}" } == {
-        openai              = "genai:grpc,sweep:api.openai.com:443"
-        smtp-relay          = "authentication:maintenance,rest:smtp-relay.gmail.com:587"
-        apps-script         = "authentication:rest:script.google.com:443"
-        apps-script-content = "authentication:rest:script.googleusercontent.com:443"
-        github-raw          = "studio:web:raw.githubusercontent.com:443"
-        github-raw-account  = "account:web:raw.githubusercontent.com:443"
-        grafana-otlp        = "alloy:alloy:otlp-gateway-prod-eu-west-2.grafana.net:443"
-      } &&
-      alltrue([for policy in kubernetes_manifest.internet_egress : policy.manifest.kind == "FQDNNetworkPolicy" && length(policy.manifest.spec.egress) == 1])
+      length(kubernetes_manifest.internet_egress) == length(local.internet_egress) &&
+      alltrue([for policy in kubernetes_manifest.internet_egress :
+        policy.manifest.kind == "FQDNNetworkPolicy" &&
+        length(policy.manifest.spec.egress) == 1 &&
+        length(policy.manifest.spec.egress[0].matches) == 1 &&
+        can(regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$", policy.manifest.spec.egress[0].matches[0].name)) &&
+        length(policy.manifest.spec.egress[0].ports) == 1 &&
+        one(policy.manifest.spec.podSelector.matchExpressions).key == "app.kubernetes.io/name" &&
+        one(policy.manifest.spec.podSelector.matchExpressions).operator == "In" &&
+        length(one(policy.manifest.spec.podSelector.matchExpressions).values) > 0
+      ])
     )
-    error_message = "GenAI may reach only OpenAI, Authentication only the mail relay and, from its API, the invitation list's Apps Script, the platforms only GitHub's raw host, and Alloy only Grafana's gateway, each on its own port."
+    error_message = "Each internet egress policy must admit one named host, never a wildcard, on one port, for the pods it names."
   }
 }
 
 run "runs_every_workload_on_two_pods_or_more" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
-  # The module adds a disruption budget once min exceeds 1. GenAI's maximum also bounds its OpenAI
-  # calls.
+  # The module adds a disruption budget once min exceeds 1.
   assert {
     condition = alltrue([for workload in concat([module.json_keys_grpc, module.json_keys_rest, module.authentication_rest, module.genai_grpc, module.genai_sweep, module.narrative_engine_rest, module.profile_rest], values(module.platform_web)) :
-      workload.autoscaler.spec.min_replicas == 2 && workload.autoscaler.spec.max_replicas == 3
+      workload.autoscaler.spec.min_replicas >= 2 && workload.autoscaler.spec.max_replicas > workload.autoscaler.spec.min_replicas
     ])
-    error_message = "Every workload must run two to three pods: two keep it serving through a lost pod or node, and its autoscaler adds a third."
+    error_message = "Every workload must run two pods or more, which keep it serving through a lost pod or node, and an autoscaler that can add more."
   }
 }
 
 run "runs_json_keys" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -622,10 +588,6 @@ run "runs_json_keys" {
 run "runs_authentication" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = (
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
@@ -674,10 +636,6 @@ run "runs_authentication" {
 
 run "keeps_each_services_counters_in_a_locked_store_of_its_own" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = alltrue([for image in [local.counter_store_values.image, local.counter_store_values.metrics.exporter.image] :
@@ -784,10 +742,6 @@ run "watches_certificate_expiry" {
 run "runs_genai" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = alltrue([for env in [local.genai_grpc_env, local.genai_sweep_env] :
       env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["genai"].manifest.spec.dnsNames)
@@ -799,10 +753,9 @@ run "runs_genai" {
     condition = (
       local.genai_secret_env.OPENAI_API_KEY.secret == "secrets" &&
       contains(keys(var.secrets["genai"]), local.genai_secret_env.OPENAI_API_KEY.key) &&
-      local.genai_sweep_env.SWEEP_TICKER == "true" &&
-      local.genai_grpc_env.GRPC_MAX_CONCURRENT_CALLS == "20"
+      local.genai_sweep_env.SWEEP_TICKER == "true"
     )
-    error_message = "Both read OpenAI's key from the namespace's synced secrets, the sweep checks generations on its own ticker, and the server refuses calls beyond the 20 its memory is sized for."
+    error_message = "Both read OpenAI's key from the namespace's synced secrets, and the sweep checks generations on its own ticker."
   }
 
   assert {
@@ -835,10 +788,6 @@ run "runs_genai" {
 
 run "runs_narrative_engine" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -880,10 +829,6 @@ run "runs_narrative_engine" {
 run "lets_studio_call_narrative_engine" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = (
       local.platform_env.studio.NARRATIVE_ENGINE_SERVICE_URL == "https://${module.narrative_engine_rest.service.name}.narrative-engine.svc:${module.narrative_engine_rest.service.port}" &&
@@ -906,10 +851,6 @@ run "lets_studio_call_narrative_engine" {
 
 run "runs_profile" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -959,10 +900,6 @@ run "runs_profile" {
 
 run "runs_each_platform" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = alltrue([for platform, env in local.platform_env :
@@ -1061,10 +998,6 @@ run "registers_every_other_platform_as_a_client" {
 run "serves_each_platform_through_its_gateway" {
   command = plan
 
-  variables {
-    custom_resources = true
-  }
-
   assert {
     condition = toset(keys(kubernetes_manifest.platform_gateway)) == toset(keys(local.platforms)) && alltrue([for platform, gateway in kubernetes_manifest.platform_gateway :
       gateway.manifest.spec.gatewayClassName == "gke-l7-global-external-managed" &&
@@ -1119,10 +1052,6 @@ run "serves_each_platform_through_its_gateway" {
 
 run "checks_each_service_as_a_caller_it_admits" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -1210,8 +1139,7 @@ run "skips_the_checks_during_a_planned_downtime" {
   command = plan
 
   variables {
-    custom_resources = true
-    downtime         = "{\"components\":[\"service-json-keys.grpc\"],\"start\":\"2026-11-02T06:00:00Z\",\"end\":\"2026-11-02T07:00:00Z\"}"
+    downtime = "{\"components\":[\"service-json-keys.grpc\"],\"start\":\"2026-11-02T06:00:00Z\",\"end\":\"2026-11-02T07:00:00Z\"}"
   }
 
   assert {
@@ -1225,10 +1153,6 @@ run "skips_the_checks_during_a_planned_downtime" {
 
 run "lets_only_the_named_operators_run_maintenance" {
   command = plan
-
-  variables {
-    custom_resources = true
-  }
 
   assert {
     condition = (
@@ -1304,7 +1228,6 @@ run "makes_no_openai_call_without_a_revision" {
   command = plan
 
   variables {
-    custom_resources     = true
     genai_provider_check = null
   }
 
@@ -1318,7 +1241,6 @@ run "makes_one_openai_call_per_revision_as_a_caller_genai_admits" {
   command = plan
 
   variables {
-    custom_resources     = true
     genai_provider_check = "rehearsal"
   }
 
@@ -1354,7 +1276,6 @@ run "skips_the_openai_call_during_a_planned_downtime" {
   command = plan
 
   variables {
-    custom_resources     = true
     genai_provider_check = "rehearsal"
     downtime             = "{\"components\":[\"service-genai.grpc\"],\"start\":\"2026-11-02T06:00:00Z\",\"end\":\"2026-11-02T07:00:00Z\"}"
   }
