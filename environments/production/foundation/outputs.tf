@@ -1,8 +1,3 @@
-output "region" {
-  description = "Production Google Cloud region."
-  value       = var.region
-}
-
 output "workload_project_id" {
   description = "Replaceable production workload project ID."
   value       = google_project.workload.project_id

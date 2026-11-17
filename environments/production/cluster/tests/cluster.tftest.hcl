@@ -21,7 +21,6 @@ override_data {
   target = data.terraform_remote_state.foundation
   values = {
     outputs = {
-      region              = "europe-west1"
       workload_project_id = "a-novel-production-prod"
       platform_edges = {
         account = {

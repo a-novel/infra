@@ -125,23 +125,3 @@ resource "kubernetes_manifest" "service_trust_bundle" {
 
   depends_on = [helm_release.trust_manager]
 }
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["authentication"]
-  to   = kubernetes_manifest.service_server_certificate["authentication/rest"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["genai"]
-  to   = kubernetes_manifest.service_server_certificate["genai/grpc"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["json-keys"]
-  to   = kubernetes_manifest.service_server_certificate["json-keys/grpc"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["narrative-engine"]
-  to   = kubernetes_manifest.service_server_certificate["narrative-engine/rest"]
-}

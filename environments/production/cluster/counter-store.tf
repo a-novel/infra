@@ -164,24 +164,3 @@ resource "kubernetes_network_policy_v1" "counter_store" {
     }
   }
 }
-
-# Authentication's store, from when it was the only one.
-moved {
-  from = kubernetes_manifest.counter_store_passwords[0]
-  to   = kubernetes_manifest.counter_store_passwords["authentication"]
-}
-
-moved {
-  from = kubernetes_manifest.counter_store_users[0]
-  to   = kubernetes_manifest.counter_store_users["authentication"]
-}
-
-moved {
-  from = helm_release.counter_store[0]
-  to   = helm_release.counter_store["authentication"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.counter_store
-  to   = kubernetes_network_policy_v1.counter_store["authentication"]
-}
