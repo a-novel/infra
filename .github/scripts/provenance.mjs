@@ -1,8 +1,9 @@
 // Release provenance of the images a plan copies. A release image deploys only from an immutable
-// Release the release App published, built by that tag's own run, release.yaml's or main.yaml's, and
-// never below the version already deployed: pull requests only move forward. Any other image must
-// come from its producer's workflow on master. The pins the last apply deployed, the output's value before this plan, were
-// verified when they deployed; the plan's prior state already shows the new outputs.
+// Release the release App published, built by that tag's own run, release.yaml's or main.yaml's,
+// and never below the version already deployed: pull requests only move forward. Any other image
+// must come from its producer's workflow on master. The pins the last apply deployed, the output's
+// value before this plan, were verified when they deployed; the plan's prior state already shows
+// the new outputs.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
