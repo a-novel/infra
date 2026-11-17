@@ -200,9 +200,9 @@ platform it runs, so a new platform becomes a client by joining that list. Joini
 platform call Authentication, JSON Keys' public keys and profile, and gives it the settings every
 platform shares, such as the parent domain that keeps the visitor's telemetry consent.
 
-Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in its service root's
-`terraform.tfvars`, its database image included, and the cluster root reads those pins. Every plan
-verifies each release image it changes:
+Service images come from `ghcr.io/a-novel/*`. Each is pinned as `tag@digest` in the cluster root's
+`releases/<service>.tfvars`, its database image included. Every plan verifies each release image it
+changes:
 
 - the release tag's own run built it;
 - the release App published that tag as an immutable GitHub Release;
@@ -234,7 +234,7 @@ GenAI's rows hold payloads and responses of up to 24 MiB, so its database has mo
 instance's memory is its limit too, and no instance has a CPU limit. Volumes use `standard-rwo` and
 grow in place.
 
-- **Image:** each database's image catalog takes the database image its service root pins, on
+- **Image:** each database's image catalog takes the database image its release file pins, on
   PostgreSQL 18. GenAI preloads `pg_cron`, which runs its retention purge in background workers.
 - **Credentials:** CloudNativePG generates them, in the `database-app` Secret, for the database and
   owner `app`.
@@ -264,7 +264,7 @@ own service's bucket through the `barmanReader` role, and writes none.
 
 Secret containers live in the management project. Humans add their values with `gcloud`, as
 [Secrets](runbooks/secrets.md) describes, so OpenTofu never sees them. A service's workloads read
-the numeric version its root's `terraform.tfvars` pins, and the add-ons the cluster root's
+the numeric version its `releases/<service>.tfvars` pins, and the add-ons the cluster root's
 `addon_secret_versions`. External Secrets copies them into each namespace's `secrets` Secret, as
 that namespace's `secrets` identity, which reads only its own service's secrets.
 

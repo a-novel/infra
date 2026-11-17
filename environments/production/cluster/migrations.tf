@@ -3,7 +3,7 @@
 # database lineage names a new Job too: the new database starts empty, and only the migrations
 # schedule pg_cron's jobs (a-novel/service-genai#486). A Job's template can't change once created.
 resource "kubernetes_job_v1" "migrations" {
-  for_each = var.custom_resources ? toset([for service, roles in local.release_roles : service if contains(roles, "migrations")]) : toset([])
+  for_each = var.custom_resources ? toset([for service, pins in local.release_pins : service if contains(keys(pins), "migrations")]) : toset([])
 
   metadata {
     name      = "migrations-${substr(trimprefix(local.release_images["${each.key}/migrations"].digest, "sha256:"), 0, 12)}-${substr(sha256(var.backup_server_name), 0, 8)}"

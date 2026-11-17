@@ -12,8 +12,7 @@ window on the pods and GKE's maintenance exclusion. A root's inputs are:
 
 - its own directory, and the local modules it calls;
 - `.opentofu-version`;
-- for the cluster root, every `terraform.tfvars` under `environments/production`, which holds the
-  release pins, and the health check's script;
+- for the cluster root, the health check's script;
 - for the Grafana root, foundation's and the cluster root's `terraform.tfvars`;
 - for the GitHub root, the scripts its job runs after applying.
 

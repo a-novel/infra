@@ -13,8 +13,10 @@ override.tf.json
 *.tfbackend
 *.tfvars
 *.tfvars.json
-# Each root's reviewed production inputs; secret payloads never live here.
+# Each root's reviewed production inputs, and the cluster's release pins; secret payloads never live
+# here.
 !terraform.tfvars
+!environments/production/cluster/releases/*.tfvars
 
 # Local credentials and environment files
 .env

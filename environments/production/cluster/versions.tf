@@ -24,7 +24,7 @@ terraform {
       source  = "hashicorp/time"
       version = "0.14.2"
     }
-    # Its decode_tfvars reads each service root's inputs.
+    # Its decode_tfvars reads each service's release pins.
     terraform = {
       source = "terraform.io/builtin/terraform"
     }

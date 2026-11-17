@@ -1,5 +1,5 @@
 locals {
-  # Each secret at the version its service's root pins. This root pins the add-ons' own.
+  # Each secret at the version its service's release file pins. This root pins the add-ons' own.
   secret_versions = merge(var.addon_secret_versions, { for service in setintersection(keys(var.secrets), var.namespaces) : service => local.service_inputs[service].secret_versions })
   secret_grants = { for grant in flatten([for service, env in var.secrets : [for name in distinct(values(env)) : { service = service, name = name }]]) :
     "${grant.service}/${grant.name}" => grant

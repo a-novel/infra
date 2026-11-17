@@ -30,7 +30,7 @@ resource "time_sleep" "database_lineage" {
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
-# release version, so a catalog states it. Each image is the one its service root pins.
+# release version, so a catalog states it. Each image is the one its service's release file pins.
 resource "kubernetes_manifest" "database_image" {
   for_each = var.custom_resources ? var.databases : {}
 

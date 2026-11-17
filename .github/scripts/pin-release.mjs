@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import { isRelease, newest, semver } from "./versions.mjs";
 
-export const paths = [":(glob)environments/production/*/terraform.tfvars"];
+export const paths = [
+  ":(glob)environments/production/cluster/releases/*.tfvars",
+];
 const titlePattern = new RegExp(
   String.raw`^chore\(deps\): update [a-z0-9-]+ images to (${semver})$`,
 );

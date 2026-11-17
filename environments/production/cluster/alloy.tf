@@ -6,10 +6,10 @@ locals {
   # Each service's workloads send OTLP/HTTP to Alloy's receiver, inside the cluster and without
   # credentials, under their repository's name. a_novel.workload is api on a workload that serves
   # requests, and job on one a schedule starts or that runs itself.
-  telemetry_env = { for service, roles in local.release_roles : service => { for workload in ["api", "job"] : workload => {
+  telemetry_env = { for service, pins in local.release_pins : service => { for workload in ["api", "job"] : workload => {
     OTEL                        = "true"
     OTEL_EXPORTER_OTLP_ENDPOINT = "http://alloy.${local.namespace["alloy"]}.svc:4318"
-    OTEL_SERVICE_NAME           = split("/", local.release_images["${service}/${roles[0]}"].path)[0]
+    OTEL_SERVICE_NAME           = split("/", local.release_images["${service}/${keys(pins)[0]}"].path)[0]
     OTEL_RESOURCE_ATTRIBUTES    = "a_novel.workload=${workload}"
   } } }
 

@@ -32,9 +32,9 @@ Keys stores, and a new value cannot decrypt them.
    [waitlist guide](https://github.com/a-novel/service-authentication/blob/master/scripts/waitlist/README.md#rotate-the-signing-key)
    shows.
 
-2. **Pin the new number** in `secret_versions` in the service root, or in the cluster root's
-   `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points the
-   namespace's `secrets` Secret at the new version. The running pods keep the value they started
+2. **Pin the new number** in `secret_versions` in the cluster root's `releases/<service>.tfvars`, or
+   in its `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points
+   the namespace's `secrets` Secret at the new version. The running pods keep the value they started
    with, so the new one takes effect at the workload's next rollout, such as its next release.
 3. **Disable the old version** once every pod that reads the secret has restarted on the new value:
 

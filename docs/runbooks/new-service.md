@@ -63,11 +63,11 @@ room above. When the budgets outgrow the node pool, core decides its new size, i
 
 One pull request runs it:
 
-- **Its root,** `environments/production/<service>`: its release pins, written by hand as
-  `ghcr.io/a-novel/<repository>/<image>:<tag>@<digest>`, its secret versions, and a test that
-  refuses an unpinned image. `main.yaml` gains its `plan-<root>` job.
 - **The cluster root:**
-  - `namespaces`, `service_budgets`, `release_roles`, and `secrets` for its secrets;
+  - `releases/<service>.tfvars`: its release pins, written by hand as
+    `ghcr.io/a-novel/<repository>/<image>:<tag>@<digest>`, and its secret versions. The root's test
+    refuses a pin without a release tag and a digest;
+  - `namespaces`, `service_budgets`, and `secrets` for its secrets;
   - `databases`, with `queries/<database>.yaml` and `queries/<database>.sql`, which the tests
     require;
   - `service_tls` for the API it serves;
@@ -83,13 +83,8 @@ One pull request runs it:
 - **The Grafana root:** its entry in `alerts`. A stream, or work it runs after answering, goes in
   `latency_ignores`.
 
-In its plans:
-
-- `plan-<root>` fails, since the plan identity cannot create the new root's state lock. It is not
-  required yet, so it blocks nothing. The deploy creates the state, and the job becomes required
-  once the GitHub root reads the merged `main.yaml`.
-- The cluster plan creates everything in the new namespace, and updates in place each service it
-  calls, whose pods roll once to admit it.
+In its plans, the cluster plan creates everything in the new namespace, and updates in place each
+service it calls, whose pods roll once to admit it.
 
 ## 6. Check the deploy
 
