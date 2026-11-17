@@ -54,8 +54,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Each service root is one component, service-<root>.database. "*" names them all, and naming
-      # none keeps the current downtime's components; an empty start keeps its start.
+      # Each database of the cluster root is one component, service-<name>.database. "*" names them
+      # all, and naming none keeps the current downtime's components; an empty start keeps its start.
       - name: Build the downtime
         id: window
         shell: bash

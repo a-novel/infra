@@ -6,8 +6,8 @@ services stop, so their database can be upgraded safely. A PostgreSQL major upgr
 ## How a downtime unfolds
 
 A downtime lists **components**, one per service whose database will be changed. Each one is
-`service-<root>.database`, where `<root>` is the directory of a service root under
-`environments/production`, such as `json-keys`. A downtime also has a `start` and an `end`, and goes
+`service-<name>.database`, where `<name>` is a key of `databases` in the cluster root's
+`terraform.tfvars`, such as `json-keys`. A downtime also has a `start` and an `end`, and goes
 through three phases:
 
 | Phase   | When                       | What happens                                                                                                                                      |

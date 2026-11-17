@@ -6,7 +6,9 @@ This runbook is about how merged changes reach production, and what to do when o
 ## What a deploy runs
 
 A merge to `master` starts `deploy.yaml`. It compares `master` with the last _successful_ deploy,
-and applies each root whose inputs changed since then. A root's inputs are:
+and applies each root whose inputs changed since then. Foundation and the cluster root apply on every
+run, since both read the planned downtime: the deploy that runs last always leaves its current
+window on the pods and GKE's maintenance exclusion. A root's inputs are:
 
 - its own directory, and the local modules it calls;
 - `.opentofu-version`;
@@ -17,13 +19,10 @@ and applies each root whose inputs changed since then. A root's inputs are:
 
 Markdown files never count. Neither do the workflows and actions that run OpenTofu: a change to them
 takes effect at the next deploy. A merge of only such files, or of the repository's other
-development files, starts no deploy at all; `deploy.yaml`'s `paths-ignore` lists them. Every deploy
-that starts also plans each service root, which holds only its release pins and secret versions,
-and so applies nothing.
+development files, starts no deploy at all; `deploy.yaml`'s `paths-ignore` lists them.
 
 ```text
-changes ─► bootstrap ─┬─► foundation ─┬─► cluster ─► admission check
-                      │               └─► one job per service root
+changes ─► bootstrap ─┬─► foundation ─► cluster ─► admission check
                       └─► grafana, github
 ```
 
