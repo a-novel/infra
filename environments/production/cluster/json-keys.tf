@@ -24,7 +24,7 @@ locals {
 
 module "json_keys_grpc" {
   source = "../../../modules/cluster-workload"
-  count  = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   name            = "grpc"
   namespace       = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
@@ -48,7 +48,7 @@ module "json_keys_grpc" {
 # The REST server reads the database, never the master key.
 module "json_keys_rest" {
   source = "../../../modules/cluster-workload"
-  count  = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   name             = "rest"
   namespace        = kubernetes_namespace_v1.service["json-keys"].metadata[0].name

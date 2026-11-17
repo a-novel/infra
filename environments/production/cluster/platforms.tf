@@ -256,7 +256,7 @@ resource "kubernetes_manifest" "platform_health_check" {
 # Studio relays narrative-engine's streams, which last up to 5 minutes. Google's load balancer times
 # a whole response, 30 seconds by default, so Studio's backend allows 6 minutes.
 resource "kubernetes_manifest" "studio_backend_policy" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "networking.gke.io/v1"

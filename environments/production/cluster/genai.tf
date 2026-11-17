@@ -32,7 +32,7 @@ locals {
 
 module "genai_grpc" {
   source = "../../../modules/cluster-workload"
-  count  = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   name            = "grpc"
   namespace       = kubernetes_namespace_v1.service["genai"].metadata[0].name
@@ -63,7 +63,7 @@ module "genai_grpc" {
 
 module "genai_sweep" {
   source = "../../../modules/cluster-workload"
-  count  = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   name             = "sweep"
   namespace        = kubernetes_namespace_v1.service["genai"].metadata[0].name

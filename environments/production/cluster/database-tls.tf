@@ -2,7 +2,7 @@
 # every few months, and a running service loads its trusted roots once, so it would stop trusting
 # its database at each renewal.
 resource "kubernetes_manifest" "self_signed_issuer" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
@@ -17,7 +17,7 @@ resource "kubernetes_manifest" "self_signed_issuer" {
 # The CA keeps its key when cert-manager renews it, so a service that loaded the previous
 # certificate still verifies until that copy expires.
 resource "kubernetes_manifest" "database_ca" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
@@ -29,19 +29,19 @@ resource "kubernetes_manifest" "database_ca" {
       secretName = "databases-ca"
       duration   = "87600h"
       privateKey = { algorithm = "ECDSA", size = 256, rotationPolicy = "Never" }
-      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.self_signed_issuer[0].manifest.metadata.name }
+      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.self_signed_issuer.manifest.metadata.name }
     }
   }
 }
 
 resource "kubernetes_manifest" "database_issuer" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
     kind       = "ClusterIssuer"
     metadata   = { name = "databases" }
-    spec       = { ca = { secretName = kubernetes_manifest.database_ca[0].manifest.spec.secretName } }
+    spec       = { ca = { secretName = kubernetes_manifest.database_ca.manifest.spec.secretName } }
   }
 }
 
@@ -59,7 +59,7 @@ resource "kubernetes_manifest" "database_server_certificate" {
       secretTemplate = { labels = { "cnpg.io/reload" = "" } }
       usages         = ["server auth"]
       dnsNames       = [local.database_env[each.key].POSTGRES_HOST]
-      issuerRef      = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.database_issuer[0].manifest.metadata.name }
+      issuerRef      = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.database_issuer.manifest.metadata.name }
     }
   }
 }
@@ -84,7 +84,7 @@ resource "kubernetes_manifest" "database_replication_certificate" {
       secretTemplate = { labels = { "cnpg.io/reload" = "" } }
       usages         = ["client auth"]
       commonName     = local.database_replication_names[each.key]
-      issuerRef      = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.database_issuer[0].manifest.metadata.name }
+      issuerRef      = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.database_issuer.manifest.metadata.name }
     }
   }
 

@@ -184,7 +184,7 @@ resource "kubernetes_job_v1" "smoke" {
           name = "service-ca"
 
           config_map {
-            name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+            name = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
 
             items {
               key  = "ca.crt"
@@ -339,7 +339,7 @@ resource "kubernetes_cron_job_v1" "health" {
               name = "service-ca"
 
               config_map {
-                name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+                name = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
 
                 items {
                   key  = "ca.crt"
@@ -395,7 +395,12 @@ locals {
 }
 
 resource "kubernetes_job_v1" "provider_check" {
-  count = var.custom_resources && var.genai_provider_check != null ? 1 : 0
+  # Only a new revision runs the check again: a new image, setting or downtime leaves the finished Job
+  # alone. A failed Job stays tainted, so the next deploy runs it again.
+  lifecycle {
+    enabled        = var.custom_resources && var.genai_provider_check != null
+    ignore_changes = [spec]
+  }
 
   metadata {
     name      = "provider-check-${var.genai_provider_check}"
@@ -489,7 +494,7 @@ resource "kubernetes_job_v1" "provider_check" {
           name = "service-ca"
 
           config_map {
-            name = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+            name = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
 
             items {
               key  = "ca.crt"
@@ -505,12 +510,6 @@ resource "kubernetes_job_v1" "provider_check" {
 
   timeouts {
     create = "10m"
-  }
-
-  # Only a new revision runs the check again: a new image, setting or downtime leaves the finished Job
-  # alone. A failed Job stays tainted, so the next deploy runs it again.
-  lifecycle {
-    ignore_changes = [spec]
   }
 
   # The call needs GenAI's server rolled out and its way to OpenAI.
