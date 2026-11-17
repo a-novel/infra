@@ -1,8 +1,9 @@
 name: deploy
 
-# A merge to master applies the roots it changed, and every service root, so the
-# services always run the current DOWNTIME. Service roots deploy in parallel, so
-# a change one service needs from another merges first, on its own.
+# A merge to master applies the roots it changed, plus foundation and the cluster
+# on every run: they carry DOWNTIME, to GKE's maintenance exclusion and to the
+# services' pods, so the pods run the current window whichever deploy applies
+# last. An unchanged root applies nothing.
 # A merge of only the files below starts no run: no root reads them. A run that
 # never starts cannot replace a waiting downtime deploy either.
 # A manual run applies every root, and so does the end of a downtime.yaml run,
@@ -61,11 +62,8 @@ jobs:
       deploys: ${{ steps.changes.outputs.deploys }}
       commit: ${{ steps.changes.outputs.commit }}
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
-      foundation: ${{ steps.changes.outputs.foundation }}
-      cluster: ${{ steps.changes.outputs.cluster }}
       grafana: ${{ steps.changes.outputs.grafana }}
       github: ${{ steps.changes.outputs.github }}
-      services: ${{ steps.changes.outputs.services }}
     steps:
       # A manual or downtime run applies every root, and anyone with write access can start either.
       - if: github.event_name != 'push'
@@ -115,8 +113,8 @@ jobs:
           [ "$EVENT" != push ] && all=true
           commits="$(printf '%s\n%s\n' "$commits" "$(git rev-parse HEAD)" | sort -u | sed '/^$/d')"
 
-          # The service roots are the directories next to foundation, so a new one needs no edit here.
-          # The cluster, Grafana and GitHub roots apply only when they change, each in its own job.
+          # The service roots hold only the pins the cluster root reads, so they apply nothing. The
+          # announcement still lists each one a release changed.
           mapfile -t services < <(find environments/production -mindepth 1 -maxdepth 1 -type d ! -name foundation ! -name cluster ! -name grafana ! -name github -printf '%f\n' | sort)
 
           # Deletions are allowed when a pull request in this deploy carried the label when it merged.
@@ -126,7 +124,7 @@ jobs:
           # The loop records the roots that changed, which the announcement lists with each image's
           # new tag.
           roots="" deploys=false
-          declare -A deployed=([bootstrap]=false [environments/production/foundation]=false [environments/production/cluster]=false [environments/production/grafana]=false [environments/production/github]=false)
+          declare -A deployed=([bootstrap]=false [environments/production/grafana]=false [environments/production/github]=false)
           for dir in bootstrap environments/production/foundation environments/production/cluster environments/production/grafana environments/production/github "${services[@]/#/environments/production/}"; do
             if [ "$all" = false ]; then
               changes="$(.github/scripts/root-changes.sh "$dir" "$base" HEAD)"
@@ -153,11 +151,8 @@ jobs:
           {
             echo "deploys=$deploys"
             echo "bootstrap=${deployed[bootstrap]}"
-            echo "foundation=${deployed[environments/production/foundation]}"
-            echo "cluster=${deployed[environments/production/cluster]}"
             echo "grafana=${deployed[environments/production/grafana]}"
             echo "github=${deployed[environments/production/github]}"
-            echo "services=$(jq -cn '$ARGS.positional' --args "${services[@]}")"
             echo "allow=$allow"
           } | tee -a "$GITHUB_OUTPUT"
           echo "Changes since ${base:-the first deploy}; every root: $all." >>"$GITHUB_STEP_SUMMARY"
@@ -194,9 +189,10 @@ jobs:
           service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
           github_token: ${{ github.token }}
 
+  # Foundation and the cluster apply on every run, since both read DOWNTIME.
   foundation:
     needs: [changes, bootstrap]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.foundation == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: production
@@ -220,7 +216,7 @@ jobs:
   # The cluster root, which runs every service. It needs foundation's cluster and grants.
   cluster:
     needs: [changes, bootstrap, foundation]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.cluster == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.apply == 'true' }}
     runs-on: ubuntu-24.04
     # The apply waits up to 45 minutes on a migrations Job.
     timeout-minutes: 60
@@ -385,42 +381,7 @@ jobs:
           tofu -chdir=environments/production/github show -json >"$RUNNER_TEMP/state.json"
           node .github/scripts/prune.mjs "$RUNNER_TEMP/state.json" deploy "$mode"
 
-  # Every deploy applies every service root, found on disk by the changes job, so the services run
-  # the current DOWNTIME whichever deploy applies last: a downtime written while another deploy
-  # waited or ran would otherwise reach no service. An unchanged root applies nothing.
-  services:
-    name: ${{ matrix.service }}
-    needs: [changes, bootstrap, foundation]
-    if: >-
-      ${{ !cancelled() && needs.changes.outputs.apply == 'true' &&
-      needs.bootstrap.result != 'failure' && needs.foundation.result != 'failure' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    environment: production
-    strategy:
-      fail-fast: false
-      matrix:
-        service: ${{ fromJSON(needs.changes.outputs.services) }}
-    permissions:
-      attestations: read
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: tofu
-        uses: $/.github/actions/tofu
-        with:
-          root: environments/production/${{ matrix.service }}
-          apply: "true"
-          allow_deletion: ${{ needs.changes.outputs.allow }}
-          workload_identity_provider: ${{ vars.GCP_FOUNDATION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_FOUNDATION_SERVICE_ACCOUNT }}
-          github_token: ${{ github.token }}
-
-  # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra and
-  # the role of each service whose root failed to apply.
+  # Reports every deploy that applied a root, and any that failed. A failure pings a-novel/infra.
   notify:
     needs:
       - changes
@@ -429,12 +390,11 @@ jobs:
       - cluster
       - grafana
       - github
-      - services
     if: ${{ always() && (needs.changes.outputs.deploys == 'true' || contains(needs.*.result, 'failure')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      # Names the failed jobs: a matrix reports one result for all its services.
+      # Names the failed jobs.
       actions: read
     steps:
       - name: Summarize the outcome
@@ -442,22 +402,18 @@ jobs:
         shell: bash
         env:
           NEEDS: ${{ toJSON(needs) }}
-          SERVICES: ${{ needs.changes.outputs.services }}
           ROLES: ${{ vars.CHAT_REPO_ROLES }}
           COMMIT: ${{ needs.changes.outputs.commit }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [ -n "$ROLES" ] || ROLES='{}'
-          [ -n "$SERVICES" ] || SERVICES='[]'
           roles="" description="$COMMIT"
           if jq -e 'any(.[]; .result == "failure")' <<<"$NEEDS" >/dev/null; then
-            # A service's apply job carries the service's name.
             failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --paginate \
               --jq '.jobs[] | select(.conclusion == "failure") | .name' | jq -Rsc 'split("\n") | map(select(. != ""))')"
             outcome=failed description="Failed jobs: $(jq -r 'map("`\(.)`") | join(", ")' <<<"$failed")"$'\n\n'"$COMMIT"
-            roles="$(jq -r --argjson roles "$ROLES" --argjson services "$SERVICES" '["a-novel/infra"]
-              + [.[] | select(IN($services[])) | "a-novel/service-\(.)"] | map($roles[.] // empty) | join(" ")' <<<"$failed")"
+            roles="$(jq -r '.["a-novel/infra"] // empty' <<<"$ROLES")"
           elif jq -e 'any(.[]; .result == "cancelled")' <<<"$NEEDS" >/dev/null; then
             outcome=cancelled
           else

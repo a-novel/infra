@@ -1,7 +1,7 @@
 // The planned downtime: the window downtime.yaml builds from its inputs, the Fluxer posts it hands
 // to Google Cloud Workflows, and whether it has started for a component, which gates PostgreSQL
 // major upgrades. All are pure functions of their inputs and the clock.
-import { appendFileSync, readdirSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // chat-post's palette (a-novel-kit/workflows) for the states these posts show.
@@ -26,8 +26,8 @@ const reminders = [
   [21600, "in 6 hours"],
   [1800, "in 30 minutes"],
 ];
-// The production roots that belong to no service, the ones check-service-roots.sh skips.
-const sharedRoots = new Set(["foundation", "cluster", "grafana", "github"]);
+// The cluster root's inputs, whose databases map names every database production runs.
+const clusterInputs = "environments/production/cluster/terraform.tfvars";
 
 // RFC 3339 UTC, the one format a window stores, so its times compare as strings.
 const rfc3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
@@ -48,11 +48,14 @@ export function epoch(value, base) {
   return base + ((days * 24 + hours) * 60 + minutes) * 60;
 }
 
-/** The components a downtime can name, sorted: service-<root>.database for each service root. */
-export function knownComponents(roots) {
-  return roots
-    .filter((root) => !sharedRoots.has(root))
-    .map((root) => `service-${root}.database`)
+/**
+ * The components a downtime can name, sorted: service-<name>.database for each key of the
+ * `databases` map in the cluster root's terraform.tfvars, which `tofu fmt` writes one per line.
+ */
+export function knownComponents(tfvars) {
+  const databases = /^databases = \{\n([^]*?)^\}/m.exec(tfvars)?.[1] ?? "";
+  return [...databases.matchAll(/^ +([a-z-]+) *=/gm)]
+    .map(([, name]) => `service-${name}.database`)
     .sort();
 }
 
@@ -228,11 +231,6 @@ function main(command, component) {
   const now = Math.floor(Date.now() / 1000);
   let output;
   if (command === "window") {
-    const roots = readdirSync("environments/production", {
-      withFileTypes: true,
-    })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
     const window =
       OPERATION === "clear"
         ? null
@@ -241,7 +239,7 @@ function main(command, component) {
             start: START,
             end: END,
             previous: parse(PREVIOUS),
-            known: knownComponents(roots),
+            known: knownComponents(readFileSync(clusterInputs, "utf8")),
             now,
           });
     output = `window=${window ? JSON.stringify(window) : ""}\n`;

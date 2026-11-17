@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -48,18 +49,36 @@ describe("epoch", () => {
 });
 
 describe("knownComponents", () => {
-  it("names the database of each service root, and of no shared root", () => {
+  it("names each database of the cluster root, and no other service", () => {
+    const tfvars = `databases = {
+  json-keys      = { cpu = "100m", memory = "1536Mi", extensions = ["uuid-ossp"] }
+  authentication = { cpu = "100m", memory = "1536Mi", extensions = ["uuid-ossp"] }
+}
+
+service_budgets = {
+  account   = { cpu = "1", memory = "3Gi", pods = 10 }
+  json-keys = { cpu = "3", memory = "8Gi", pods = 20 }
+}
+`;
+    assert.deepEqual(knownComponents(tfvars), [
+      "service-authentication.database",
+      "service-json-keys.database",
+    ]);
+  });
+
+  it("names nothing without a databases map", () => {
     assert.deepEqual(
-      knownComponents([
-        "json-keys",
-        "cluster",
-        "foundation",
-        "authentication",
-        "github",
-        "grafana",
-      ]),
-      ["service-authentication.database", "service-json-keys.database"],
+      knownComponents('secrets = {\n  genai = { A = "a" }\n}\n'),
+      [],
     );
+  });
+
+  it("reads the committed cluster inputs", () => {
+    const tfvars = readFileSync(
+      "environments/production/cluster/terraform.tfvars",
+      "utf8",
+    );
+    assert.notDeepEqual(knownComponents(tfvars), []);
   });
 });
 
