@@ -185,9 +185,9 @@ resources, reaching the control plane through the DNS endpoint as the CI identit
 | Account          | `web`: 2 to 3 pods                                                                                              |                                                                                                   |
 
 Each service runs in the namespace of its name. A workload calls another service with a token the
-kubelet projects for that service's audience, which the cluster signs. Each service admits only its
-named callers and its own `smoke` identity, which the cluster root's `apis` table lists once, for both
-the service tokens and the network policies. JSON Keys' public REST API takes no token: only its
+kubelet projects for that service's audience, which the cluster signs. Each service admits only the
+callers the cluster root's `apis` table names for it, once for both the service tokens and the
+network policies, and its own `smoke` identity. JSON Keys' public REST API takes no token: only its
 network policy limits who reads it. Authentication and profile trust the visitor address the
 platforms forward, and narrative-engine the one Studio forwards, since only they call them on a
 visitor's behalf.
