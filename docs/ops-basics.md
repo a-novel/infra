@@ -188,11 +188,10 @@ these pieces:
 - **Several roots.** Roots are split by owner and by blast radius. Bootstrap holds the state bucket
   and the CI identities, so a mistake elsewhere cannot lock us out. Foundation holds the long-lived
   shared pieces: the project, the network and the cluster. The cluster root holds every service's
-  workloads and database. Each service root holds only that service's release pins and secret
-  versions, so a release changes one file.
+  workloads and database. Its `releases/<service>.tfvars` holds one service's release pins and
+  secret versions, so a release changes one file.
 - **The cluster root reads the other roots.** It reads foundation's applied outputs with
-  `terraform_remote_state`, so a new foundation output deploys in its own pull request first. It
-  reads each service root's `terraform.tfvars` directly, so a pin deploys in the same merge.
+  `terraform_remote_state`, so a new foundation output deploys in its own pull request first.
 - **Native features first.**
   - Migrations run as a Job the deploy waits on, before the server rolls.
   - A Deployment moves to new pods only once their probes pass.

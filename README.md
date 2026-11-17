@@ -35,22 +35,22 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 
 ## Layout
 
-| Path                                    | Contents                                                                          |
-| --------------------------------------- | --------------------------------------------------------------------------------- |
-| `bootstrap/`                            | Management project: state bucket, backup buckets, CI identities, secrets.         |
-| `environments/production/foundation`    | The workload project, its network, the cluster, the platforms' edges, budget.     |
-| `environments/production/cluster`       | Every service's workloads and database, the add-ons and the policies.             |
-| `environments/production/<service>`     | One service: its release pins and secret versions, which the cluster root reads.  |
-| `environments/production/grafana`       | Grafana's alerts and dashboards, applied only when they change.                   |
-| `environments/production/github`        | Both organizations' repositories, rulesets, teams and environments.               |
-| `environments/recovery-cluster`         | A recovery drill's throwaway cluster, which reads the restored services' backups. |
-| `environments/recovery-database`        | A recovery drill's databases, restored from production's backups and checked.     |
-| `modules/cluster-workload`              | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling.  |
-| `modules/database-operator`             | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.         |
-| `modules/github-organization`           | One organization's repositories and their config, for the GitHub root.            |
-| `modules/smoke-check`                   | The health check every service shares, which the cluster runs.                    |
-| `.github/actions/`, `.github/workflows` | The pipeline that plans, deploys and checks production.                           |
-| `.github/scripts/`                      | The pipeline's rules that can stop or misdeploy production, with their tests.     |
+| Path                                       | Contents                                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `bootstrap/`                               | Management project: state bucket, backup buckets, CI identities, secrets.         |
+| `environments/production/foundation`       | The workload project, its network, the cluster, the platforms' edges, budget.     |
+| `environments/production/cluster`          | Every service's workloads and database, the add-ons and the policies.             |
+| `environments/production/cluster/releases` | One file per service: its release pins and secret versions.                       |
+| `environments/production/grafana`          | Grafana's alerts and dashboards, applied only when they change.                   |
+| `environments/production/github`           | Both organizations' repositories, rulesets, teams and environments.               |
+| `environments/recovery-cluster`            | A recovery drill's throwaway cluster, which reads the restored services' backups. |
+| `environments/recovery-database`           | A recovery drill's databases, restored from production's backups and checked.     |
+| `modules/cluster-workload`                 | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling.  |
+| `modules/database-operator`                | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.         |
+| `modules/github-organization`              | One organization's repositories and their config, for the GitHub root.            |
+| `modules/smoke-check`                      | The health check every service shares, which the cluster runs.                    |
+| `.github/actions/`, `.github/workflows`    | The pipeline that plans, deploys and checks production.                           |
+| `.github/scripts/`                         | The pipeline's rules that can stop or misdeploy production, with their tests.     |
 
 ## Documentation
 

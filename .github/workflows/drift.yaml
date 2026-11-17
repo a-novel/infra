@@ -18,7 +18,7 @@ env:
   RELEASE_BOT_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
 
 jobs:
-  # Every root on disk, so a new service root is drift-checked with no edit here.
+  # Every root on disk, so a new root is drift-checked with no edit here.
   roots:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04

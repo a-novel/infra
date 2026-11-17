@@ -2,7 +2,7 @@
 
 This runbook is about secret values. OpenTofu manages the secret containers, in the management
 project. Humans add their values with `gcloud`, so the values never reach state, plans or Git. Each
-workload reads the numeric version its root's `terraform.tfvars` pins, so a new value takes effect
+workload reads the numeric version its `releases/<service>.tfvars` pins, so a new value takes effect
 only once a pull request pins it. External Secrets copies each pinned version into the namespace's
 `secrets` Secret, and a pod reads it when it starts.
 
@@ -32,9 +32,9 @@ Keys stores, and a new value cannot decrypt them.
    [waitlist guide](https://github.com/a-novel/service-authentication/blob/master/scripts/waitlist/README.md#rotate-the-signing-key)
    shows.
 
-2. **Pin the new number** in `secret_versions` in the service root, or in the cluster root's
-   `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points the
-   namespace's `secrets` Secret at the new version. The running pods keep the value they started
+2. **Pin the new number** in `secret_versions` in the cluster root's `releases/<service>.tfvars`, or
+   in its `addon_secret_versions` for an add-on, in a pull request, and merge it. The deploy points
+   the namespace's `secrets` Secret at the new version. The running pods keep the value they started
    with, so the new one takes effect at the workload's next rollout, such as its next release.
 3. **Disable the old version** once every pod that reads the secret has restarted on the new value:
 

@@ -425,12 +425,12 @@ run "runs_each_release_from_its_private_repository" {
     condition = (
       toset([for copy in output.image_copies : copy.target]) == toset([for key, image in local.release_images : "${image.repository}/${image.path}:${image.tag}"]) &&
       alltrue([for key, image in local.release_images :
-        can(regex("^ghcr\\.io/a-novel/(service|platform)-${split("/", key)[0]}[/:]", image.source)) &&
+        can(regex("^ghcr\\.io/a-novel/(service|platform)-${split("/", key)[0]}(/[^:@]+)?:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}$", image.source)) &&
         image.repository == "europe-west9-docker.pkg.dev/a-novel-production-prod/a-novel-${split("/", key)[0]}" &&
         can(regex("@sha256:[a-f0-9]{64}$", local.release_image[key]))
       ])
     )
-    error_message = "Each service must run its pinned release from its own private repository, which this root's deploy copies it to."
+    error_message = "Each service must run a release of its own, pinned by tag and digest in releases/<service>.tfvars, from its private repository, which this root's deploy copies it to."
   }
 
   assert {
@@ -630,9 +630,10 @@ run "runs_authentication" {
     condition = (
       local.authentication_env.POSTGRES_HOST == one(kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.dnsNames) &&
       local.authentication_env.SMTP_ADDR == "smtp-relay.gmail.com:587" &&
-      local.authentication_env.PLATFORM_AUTH_URL == "https://account.storyverse.fr"
+      local.authentication_env.PLATFORM_AUTH_URL == "https://account.storyverse.fr" &&
+      can(regex("^https://script\\.google\\.com/macros/s/[A-Za-z0-9_-]+/exec$", local.authentication_env.WAITLIST_URL))
     )
-    error_message = "Authentication must use its CloudNativePG database by its certificate's name and send its root's mail with links to the account platform."
+    error_message = "Authentication must use its CloudNativePG database by its certificate's name, send its mail with links to the account platform, and reach the invitation list as its Apps Script web app's exec address, the only shape it starts with."
   }
 
   # A release without service tokens sends Google ID tokens when GCLOUD_PROJECT_ID is set, which

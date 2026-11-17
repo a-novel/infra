@@ -50,14 +50,14 @@ code.
 ## Rules
 
 - **Put a resource in the root that owns its lifecycle.** A service's workloads and database go in
-  the cluster root, its release pins and secret versions in its service root, the network and the
-  cluster in foundation, and identities, state and backup buckets in bootstrap.
+  the cluster root, its release pins and secret versions in the cluster root's
+  `releases/<service>.tfvars`, the network and the cluster in foundation, and identities, state and
+  backup buckets in bootstrap.
 - **Add a module** only for a second caller or a shared security invariant.
-- **Wire a new service where the code cannot find it.** `deploy.yaml`, `drift.yaml` and
-  `downtime.yaml` find its root on disk. `lint-repository` fails until the root has a `plan-<root>`
-  job in `main.yaml`, its required check. The cluster root names its namespace, release roles and
-  budget, foundation its release repository, and bootstrap its Barman bucket when it has a
-  database. [Add a service](docs/runbooks/new-service.md) gives the order.
+- **Wire a new service where the code cannot find it.** The cluster root names its namespace and
+  budget, and reads its pins from `releases/<service>.tfvars`. Foundation names its release
+  repository, and bootstrap its Barman bucket when it has a database.
+  [Add a service](docs/runbooks/new-service.md) gives the order.
 - **Watch a new service in Grafana, and keep watching it as it changes.** Errors, Health and
   Performance cover a workload once it runs in its namespace and exports spans. The rest comes with
   the service:

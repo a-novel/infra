@@ -1,32 +1,22 @@
 locals {
   # The release images the cluster runs, its databases' included, by service and role, as each
-  # service's root pins them. This root's own deploy copies them into the service's repository,
-  # which foundation keeps in the cluster's region: its control plane's zone without the letter.
-  release_roles = {
-    account          = ["web"]
-    authentication   = ["database", "maintenance", "migrations", "rest"]
-    genai            = ["database", "grpc", "migrations", "sweep"]
-    json-keys        = ["database", "grpc", "migrations", "rest", "rotatekeys"]
-    narrative-engine = ["database", "migrations", "rest"]
-    profile          = ["database", "migrations", "rest"]
-    studio           = ["web"]
-  }
+  # service's releases/<service>.tfvars pins them. This root's own deploy copies them into the
+  # service's repository, which foundation keeps in the cluster's region: its control plane's zone
+  # without the letter. A role a workload needs and no file pins fails the plan at its lookup.
+  release_pins     = { for service, inputs in local.service_inputs : service => inputs.images }
   release_registry = "${regex("^(.+)-[a-z]$", local.cluster.location)[0]}-docker.pkg.dev/${data.terraform_remote_state.foundation.outputs.workload_project_id}"
-  release_pins     = { for service in keys(local.release_roles) : service => local.service_inputs[service].images }
-  release_images = { for item in flatten([for service, roles in local.release_roles : [for role in roles : { service = service, role = role }]]) :
-    "${item.service}/${item.role}" => merge(
-      regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", local.release_pins[item.service][item.role]),
-      {
-        source     = local.release_pins[item.service][item.role]
-        repository = "${local.release_registry}/a-novel-${item.service}"
-      },
-    )
-  }
+  release_images = merge([for service, pins in local.release_pins : { for role, source in pins : "${service}/${role}" => merge(
+    regex("^ghcr\\.io/a-novel/(?P<path>[^:@]+):(?P<tag>[^@]+)@(?P<digest>sha256:[a-f0-9]{64})$", source),
+    {
+      source     = source
+      repository = "${local.release_registry}/a-novel-${service}"
+    },
+  ) }]...)
   release_image = { for key, image in local.release_images : key => "${image.repository}/${image.path}@${image.digest}" }
 
   # A planned downtime listing one of a service's components stops its workloads from its start.
   downtime     = try(jsondecode(var.downtime), null)
-  downtime_env = { for service in keys(local.release_roles) : service => anytrue([for component in try(local.downtime.components, []) : startswith(component, "service-${service}.")]) ? { DOWNTIME_START = local.downtime.start } : {} }
+  downtime_env = { for service in keys(local.release_pins) : service => anytrue([for component in try(local.downtime.components, []) : startswith(component, "service-${service}.")]) ? { DOWNTIME_START = local.downtime.start } : {} }
 
   # Each service's workloads verify the service tokens the cluster signs.
   service_token_issuer = "https://container.googleapis.com/v1/projects/${data.terraform_remote_state.foundation.outputs.workload_project_id}/locations/${local.cluster.location}/clusters/${local.cluster.name}"

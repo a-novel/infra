@@ -12,11 +12,10 @@ root="$1" base="$2" head="$3"
 # through another module. The loop also visits each module it adds. The workflows and actions that
 # run OpenTofu are not inputs: a change to them alone changes nothing in production.
 paths=(.opentofu-version)
-# The cluster root reads each service root's pins from its terraform.tfvars, and its health checks
-# run the smoke-check module's script. The Grafana root reads foundation's node pool. The GitHub
-# root's job copies the governance secrets, asserts the repository settings and prunes after it
-# applies.
-[ "$root" != environments/production/cluster ] || paths+=('environments/production/*/terraform.tfvars' modules/smoke-check/smoke.sh)
+# The cluster root's health checks run the smoke-check module's script. The Grafana root reads
+# foundation's node pool. The GitHub root's job copies the governance secrets, asserts the repository
+# settings and prunes after it applies.
+[ "$root" != environments/production/cluster ] || paths+=(modules/smoke-check/smoke.sh)
 [ "$root" != environments/production/grafana ] || paths+=(environments/production/foundation/terraform.tfvars environments/production/cluster/terraform.tfvars)
 [ "$root" != environments/production/github ] || paths+=(.github/scripts/secret-sync.mjs .github/scripts/repository-asserts.mjs .github/scripts/prune.mjs)
 dirs=("$root")

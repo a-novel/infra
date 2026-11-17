@@ -94,7 +94,7 @@ variable "service_budgets" {
 }
 
 variable "secrets" {
-  description = "Each namespace's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<namespace>-<name>. A service's version is the one its root pins, and an add-on's is in addon_secret_versions."
+  description = "Each namespace's secrets on the cluster: the variable its workloads read, and the name of its Secret Manager secret, production-<namespace>-<name>. A service's version is the one its releases/<service>.tfvars pins, and an add-on's is in addon_secret_versions."
   type        = map(map(string))
 
   validation {

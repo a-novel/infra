@@ -202,9 +202,10 @@ and every bucket name embeds the management project's number, so a rebuild start
    `tofu -chdir=bootstrap output` prints. CI can plan again from here.
 6. **Add every secret value**, as [Secrets](secrets.md) describes. Bootstrap created the empty
    secrets, and new secrets start at version 1. On the same branch, set every pinned version in the
-   roots' `terraform.tfvars` to the versions you created, and the cluster root's `custom_resources`
-   to `false`, since a fresh cluster lacks the add-ons' kinds. Merge it. Its deploy creates the
-   workload project, the network, the cluster and its add-ons.
+   roots' `terraform.tfvars` and in the cluster root's `releases/*.tfvars` to the versions you
+   created, and the cluster root's `custom_resources` to `false`, since a fresh cluster lacks the
+   add-ons' kinds. Merge it. Its deploy creates the workload project, the network, the cluster and
+   its add-ons.
 7. **Let OpenAI and the SMTP relay admit the NAT address**, which foundation's
    `cluster_nat_address` output gives:
    - OpenAI's project allows that address alone;
