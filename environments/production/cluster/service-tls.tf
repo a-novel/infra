@@ -43,7 +43,7 @@ resource "helm_release" "trust_manager" {
 # The CA keeps its key when cert-manager renews it, so a caller that loaded the previous certificate
 # still verifies until that copy expires.
 resource "kubernetes_manifest" "service_ca" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
@@ -55,19 +55,19 @@ resource "kubernetes_manifest" "service_ca" {
       secretName = "services-ca"
       duration   = "87600h"
       privateKey = { algorithm = "ECDSA", size = 256, rotationPolicy = "Never" }
-      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.self_signed_issuer[0].manifest.metadata.name }
+      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.self_signed_issuer.manifest.metadata.name }
     }
   }
 }
 
 resource "kubernetes_manifest" "service_issuer" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
     kind       = "ClusterIssuer"
     metadata   = { name = "services" }
-    spec       = { ca = { secretName = kubernetes_manifest.service_ca[0].manifest.spec.secretName } }
+    spec       = { ca = { secretName = kubernetes_manifest.service_ca.manifest.spec.secretName } }
   }
 }
 
@@ -84,7 +84,7 @@ resource "kubernetes_manifest" "service_server_certificate" {
       secretName = "${each.value.workload}-server-tls"
       usages     = ["server auth"]
       dnsNames   = ["${each.value.workload}.${kubernetes_namespace_v1.service[each.value.namespace].metadata[0].name}.svc"]
-      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.service_issuer[0].manifest.metadata.name }
+      issuerRef  = { group = "cert-manager.io", kind = "ClusterIssuer", name = kubernetes_manifest.service_issuer.manifest.metadata.name }
     }
   }
 
@@ -100,14 +100,14 @@ resource "kubernetes_manifest" "service_server_certificate" {
 # Every service namespace receives the CA's certificate in a ConfigMap named after the Bundle, and a
 # workload that calls a service API mounts it. The CA keeps its key, so a renewal changes no caller's trust.
 resource "kubernetes_manifest" "service_trust_bundle" {
-  count = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   manifest = {
     apiVersion = "trust.cert-manager.io/v1alpha1"
     kind       = "Bundle"
     metadata   = { name = "services-ca" }
     spec = {
-      sources = [{ secret = { name = kubernetes_manifest.service_ca[0].manifest.spec.secretName, key = "ca.crt" } }]
+      sources = [{ secret = { name = kubernetes_manifest.service_ca.manifest.spec.secretName, key = "ca.crt" } }]
       target = {
         configMap         = { key = "ca.crt" }
         namespaceSelector = { matchExpressions = [{ key = "kubernetes.io/metadata.name", operator = "In", values = sort(var.namespaces) }] }
@@ -124,24 +124,4 @@ resource "kubernetes_manifest" "service_trust_bundle" {
   }
 
   depends_on = [helm_release.trust_manager]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["authentication"]
-  to   = kubernetes_manifest.service_server_certificate["authentication/rest"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["genai"]
-  to   = kubernetes_manifest.service_server_certificate["genai/grpc"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["json-keys"]
-  to   = kubernetes_manifest.service_server_certificate["json-keys/grpc"]
-}
-
-moved {
-  from = kubernetes_manifest.service_server_certificate["narrative-engine"]
-  to   = kubernetes_manifest.service_server_certificate["narrative-engine/rest"]
 }

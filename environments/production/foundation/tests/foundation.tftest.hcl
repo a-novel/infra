@@ -18,11 +18,7 @@ mock_provider "google" {
   }
 }
 
-mock_provider "google-beta" {
-  mock_resource "google_project_service_identity" {
-    defaults = { member = "serviceAccount:mock-agent@gcp-sa-cloudscheduler.iam.gserviceaccount.com" }
-  }
-}
+mock_provider "google-beta" {}
 
 run "resolves_only_the_dns_allowlist" {
   command = plan

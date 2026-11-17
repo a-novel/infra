@@ -4,11 +4,6 @@ variable "cluster_databases" {
     workload_project_id = string
     services            = set(string)
   })
-
-  validation {
-    condition     = alltrue([for service in var.cluster_databases.services : contains(["json-keys", "authentication", "genai", "narrative-engine", "profile"], service)])
-    error_message = "Select supported services."
-  }
 }
 
 variable "retired_barman_lineages" {

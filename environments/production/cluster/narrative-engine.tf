@@ -34,14 +34,14 @@ locals {
 
 module "narrative_engine_rest" {
   source = "../../../modules/cluster-workload"
-  count  = var.custom_resources ? 1 : 0
+  lifecycle { enabled = var.custom_resources }
 
   name             = "rest"
   namespace        = kubernetes_namespace_v1.service["narrative-engine"].metadata[0].name
   image            = local.release_image["narrative-engine/rest"]
   port             = local.service_port
   tls              = { secret = kubernetes_manifest.service_server_certificate["narrative-engine/rest"].manifest.spec.secretName }
-  service_ca       = kubernetes_manifest.service_trust_bundle[0].manifest.metadata.name
+  service_ca       = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
   http_health_path = "/v1/ping"
   env              = local.narrative_engine_env
   secret_env       = local.narrative_engine_secret_env

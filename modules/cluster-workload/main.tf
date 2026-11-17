@@ -368,7 +368,7 @@ resource "kubernetes_service_v1" "workload" {
 
 # A drain may stop all but one pod at a time. A single pod gets no budget, which would block drains.
 resource "kubernetes_pod_disruption_budget_v1" "workload" {
-  count = var.replicas.min > 1 ? 1 : 0
+  lifecycle { enabled = var.replicas.min > 1 }
 
   metadata {
     name      = var.name
@@ -387,7 +387,7 @@ resource "kubernetes_pod_disruption_budget_v1" "workload" {
 # GKE reads the gauge from every pod every few seconds, and serves it to the autoscaler, which names
 # it autoscaling.gke.io|<this object>|<the gauge>.
 resource "kubernetes_manifest" "scaling_gauge" {
-  count = var.scaling_gauge == null ? 0 : 1
+  lifecycle { enabled = var.scaling_gauge != null }
 
   manifest = {
     apiVersion = "autoscaling.gke.io/v1beta1"
@@ -408,7 +408,7 @@ resource "kubernetes_manifest" "scaling_gauge" {
 }
 
 resource "kubernetes_horizontal_pod_autoscaler_v2" "workload" {
-  count = var.replicas.max > var.replicas.min ? 1 : 0
+  lifecycle { enabled = var.replicas.max > var.replicas.min }
 
   metadata {
     name      = var.name
