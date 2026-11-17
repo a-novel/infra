@@ -94,15 +94,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.87.1
-        with:
-          config: .gitleaks.toml
-          # renovate: datasource=github-releases depName=gitleaks/gitleaks
-          version: "8.30.1"
 
   lint-repository:
     runs-on: ubuntu-24.04
@@ -137,9 +129,6 @@ jobs:
       - name: Lint shell scripts
         uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.87.1
         with:
-          # renovate: datasource=custom.shellcheck depName=koalaman/shellcheck
-          version: "0.11.0"
-          sha256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
           # actionlint below checks the workflows' steps but never reads a composite action.
           run_steps: .github/actions/*/action.yaml
 
@@ -155,45 +144,6 @@ jobs:
 
       - name: Audit GitHub Actions security
         uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.87.1
-        with:
-          # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
-          version: "1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d"
-
-  # The deletion label approves the plans of the head it was added on. A push's plans ignore it, and
-  # this job removes it so a maintainer can add it again for the new head.
-  revoke-deletion-label:
-    if: >-
-      github.event.action == 'synchronize' &&
-      contains(github.event.pull_request.labels.*.name, 'allow-resource-deletion')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Remove the deletion label
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-resource-deletion
-
-  # The downtime label works the same way: it approves PostgreSQL major upgrades for the head it was
-  # added on, during that service's planned downtime.
-  revoke-downtime-label:
-    if: >-
-      github.event.action == 'synchronize' &&
-      contains(github.event.pull_request.labels.*.name, 'allow-downtime')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Remove the downtime label
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label allow-downtime
 
   # Each root's plan is its own required check. GitHub issues no OIDC token to
   # fork pull requests, so their plans fail until a maintainer pushes the branch.
