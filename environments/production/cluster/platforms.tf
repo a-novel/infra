@@ -30,14 +30,13 @@ locals {
       NARRATIVE_ENGINE_SERVICE_URL = "https://rest.narrative-engine.svc:${local.service_port}"
     }
   }
-  # The service APIs each platform calls, by namespace, with the variable that names the file of the
-  # token it sends each. A service's namespace is also its token's audience. Every platform calls
-  # Authentication, JSON Keys' public keys, which take no token, and profile; Studio also calls
-  # narrative-engine.
-  platform_services = { for platform in keys(local.platforms) : platform => merge(
-    { authentication = "SERVICE_TOKEN_PATH", json-keys = null, profile = "PROFILE_SERVICE_TOKEN_PATH" },
-    lookup({ studio = { narrative-engine = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH" } }, platform, {}),
-  ) }
+  # The variable that names the file of the token a platform sends each API it calls (apis.tf), whose
+  # namespace is the token's audience.
+  platform_token_paths = {
+    "authentication/rest"   = "SERVICE_TOKEN_PATH"
+    "narrative-engine/rest" = "NARRATIVE_ENGINE_SERVICE_TOKEN_PATH"
+    "profile/rest"          = "PROFILE_SERVICE_TOKEN_PATH"
+  }
   # A platform takes each request's origin from its Host header, over https: only the HTTPS
   # listener routes to it, and it keeps Host. Form posts and Studio's redirect URI rely on that.
   platform_env = { for platform, settings in local.platforms : platform => merge(local.telemetry_env[platform].api, {
@@ -83,7 +82,7 @@ module "platform_web" {
   port             = local.platform_port
   http_health_path = "/ping"
   env              = local.platform_env[each.key]
-  service_tokens   = { for service, variable in local.platform_services[each.key] : service => variable if variable != null }
+  service_tokens   = { for api in local.calls["${each.key}/web"] : local.service_apis[api].namespace => local.platform_token_paths[api] if local.apis[api].tokens }
   service_ca       = one(kubernetes_manifest.service_trust_bundle[*].manifest.metadata.name)
   resources        = { cpu = "100m", memory = "512Mi" }
 
@@ -127,14 +126,14 @@ resource "kubernetes_network_policy_v1" "platform_web" {
 
     egress {
       dynamic "to" {
-        for_each = keys(local.platform_services[each.key])
+        for_each = local.calls["${each.key}/web"]
 
         content {
           namespace_selector {
-            match_labels = { "kubernetes.io/metadata.name" = to.value }
+            match_labels = { "kubernetes.io/metadata.name" = local.service_apis[to.value].namespace }
           }
           pod_selector {
-            match_labels = { "app.kubernetes.io/name" = "rest" }
+            match_labels = { "app.kubernetes.io/name" = local.service_apis[to.value].workload }
           }
         }
       }

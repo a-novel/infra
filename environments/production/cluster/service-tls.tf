@@ -2,19 +2,7 @@
 # cross the cluster only over TLS (RFC 6749 §3.2 and §10.3). trust-manager copies the CA's
 # certificate into each namespace that calls a service.
 locals {
-  # Each service API that serves TLS, by namespace: its workloads, each with a certificate that names
-  # its Service.
-  service_tls = {
-    authentication   = ["rest"]
-    genai            = ["grpc"]
-    json-keys        = ["grpc", "rest"]
-    narrative-engine = ["rest"]
-    profile          = ["rest"]
-  }
-  service_apis = { for api in flatten([for namespace, workloads in local.service_tls : [for workload in workloads : { namespace = namespace, workload = workload }]]) :
-    "${api.namespace}/${api.workload}" => api
-  }
-  # The port each API serves TLS on.
+  # The port each API (apis.tf) serves TLS on, with a certificate that names its Service.
   service_port = 8443
 }
 

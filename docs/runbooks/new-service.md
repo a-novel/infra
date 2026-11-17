@@ -70,15 +70,16 @@ One pull request runs it:
   - `namespaces`, `service_budgets`, and `secrets` for its secrets;
   - `databases`, with `queries/<database>.yaml` and `queries/<database>.sql`, which the tests
     require;
-  - `service_tls` for the API it serves;
-  - its workloads through `modules/cluster-workload`, with their network policies, in
-    `<service>.tf`;
+  - the API it serves in `apis`, in `apis.tf`, with its callers: the table gives it its certificate,
+    its network policy and its callers' egress, and its env sets
+    `SERVICE_TOKEN_CALLERS = local.token_callers["<namespace>/<workload>"]`;
+  - its workloads through `modules/cluster-workload`, in `<service>.tf`;
   - for a platform, instead, its entry in `platforms`, in `platforms.tf`. The list runs its `web`
     workload behind its Gateway, and grants it what every platform shares: the calls to
     Authentication, JSON Keys' public keys and profile, and the shared settings, such as
     `PUBLIC_PLATFORM_DOMAIN`;
   - its smoke and health checks, in `health_check_targets`;
-  - in each service it calls, its API in `SERVICE_TOKEN_CALLERS` and in the network policy;
+  - in each API it calls, itself among the `callers` in `apis.tf`;
   - each internet host it reaches in `internet_egress`, for the pods that call it.
 - **The Grafana root:** its entry in `alerts`. A stream, or work it runs after answering, goes in
   `latency_ignores`.

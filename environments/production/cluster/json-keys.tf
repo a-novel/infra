@@ -10,7 +10,7 @@ locals {
     GOMEMLIMIT              = "400MiB"
     SERVICE_TOKEN_ISSUER    = local.service_token_issuer
     SERVICE_TOKEN_AUDIENCE  = "json-keys"
-    SERVICE_TOKEN_CALLERS   = "system:serviceaccount:authentication:rest,system:serviceaccount:narrative-engine:rest,system:serviceaccount:profile:rest,system:serviceaccount:json-keys:smoke"
+    SERVICE_TOKEN_CALLERS   = local.token_callers["json-keys/grpc"]
   })
   json_keys_rest_env = merge(local.database_env["json-keys"], local.downtime_env["json-keys"], local.telemetry_env["json-keys"].api, {
     # Each request reads the keys from the database, and the platforms cache them for 30 minutes, so
@@ -67,103 +67,4 @@ module "json_keys_rest" {
   replicas = { min = 2, max = 3 }
 
   depends_on = [kubernetes_job_v1.migrations]
-}
-
-# The Authentication, narrative-engine and profile APIs and JSON Keys' smoke check call the server,
-# which reaches the issuer's keys through Google's restricted API addresses.
-resource "kubernetes_network_policy_v1" "json_keys_grpc" {
-  metadata {
-    name      = "grpc"
-    namespace = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = { "app.kubernetes.io/name" = "grpc" }
-    }
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      dynamic "from" {
-        for_each = ["authentication", "narrative-engine", "profile"]
-
-        content {
-          namespace_selector {
-            match_labels = { "kubernetes.io/metadata.name" = from.value }
-          }
-          pod_selector {
-            match_labels = { "app.kubernetes.io/name" = "rest" }
-          }
-        }
-      }
-      from {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "smoke" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-
-    egress {
-      dynamic "to" {
-        for_each = local.cluster.google_api_ranges
-
-        content {
-          ip_block {
-            cidr = to.value
-          }
-        }
-      }
-
-      ports {
-        port     = "443"
-        protocol = "TCP"
-      }
-    }
-  }
-}
-
-# The platforms and JSON Keys' smoke check read the public keys. The API reaches only its database,
-# through its database client's policy, so this policy opens no egress.
-resource "kubernetes_network_policy_v1" "json_keys_rest" {
-  metadata {
-    name      = "rest"
-    namespace = kubernetes_namespace_v1.service["json-keys"].metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = { "app.kubernetes.io/name" = "rest" }
-    }
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      dynamic "from" {
-        for_each = local.platforms
-
-        content {
-          namespace_selector {
-            match_labels = { "kubernetes.io/metadata.name" = from.key }
-          }
-          pod_selector {
-            match_labels = { "app.kubernetes.io/name" = "web" }
-          }
-        }
-      }
-      from {
-        pod_selector {
-          match_labels = { "app.kubernetes.io/name" = "smoke" }
-        }
-      }
-
-      ports {
-        port     = tostring(local.service_port)
-        protocol = "TCP"
-      }
-    }
-  }
 }
