@@ -76,23 +76,3 @@ module "scheduled" {
 
   depends_on = [module.migrations, kubernetes_manifest.secrets]
 }
-
-moved {
-  from = kubernetes_cron_job_v1.scheduled["rotate-keys"]
-  to   = module.scheduled["rotate-keys"].kubernetes_cron_job_v1.cron_job
-}
-
-moved {
-  from = kubernetes_cron_job_v1.scheduled["refresh-token-purge"]
-  to   = module.scheduled["refresh-token-purge"].kubernetes_cron_job_v1.cron_job
-}
-
-moved {
-  from = kubernetes_cron_job_v1.scheduled["authorization-code-purge"]
-  to   = module.scheduled["authorization-code-purge"].kubernetes_cron_job_v1.cron_job
-}
-
-moved {
-  from = kubernetes_cron_job_v1.scheduled["maintenance"]
-  to   = module.scheduled["maintenance"].kubernetes_cron_job_v1.cron_job
-}

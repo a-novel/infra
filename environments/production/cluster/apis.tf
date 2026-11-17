@@ -153,33 +153,3 @@ resource "kubernetes_network_policy_v1" "api" {
     }
   }
 }
-
-moved {
-  from = kubernetes_network_policy_v1.authentication_rest
-  to   = kubernetes_network_policy_v1.api["authentication/rest"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.genai_grpc
-  to   = kubernetes_network_policy_v1.api["genai/grpc"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.json_keys_grpc
-  to   = kubernetes_network_policy_v1.api["json-keys/grpc"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.json_keys_rest
-  to   = kubernetes_network_policy_v1.api["json-keys/rest"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.narrative_engine_rest
-  to   = kubernetes_network_policy_v1.api["narrative-engine/rest"]
-}
-
-moved {
-  from = kubernetes_network_policy_v1.profile_rest
-  to   = kubernetes_network_policy_v1.api["profile/rest"]
-}
