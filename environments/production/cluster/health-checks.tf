@@ -79,140 +79,28 @@ resource "kubernetes_network_policy_v1" "smoke" {
 
 # The Job's name follows everything its pod runs, so a new image, script or setting runs it once. A
 # finished Job stays as its record, and a failed one fails the deploy.
-resource "kubernetes_job_v1" "smoke" {
+module "smoke" {
+  source   = "../../../modules/cluster-job"
   for_each = var.custom_resources ? local.health_checks : {}
 
-  metadata {
-    name      = "smoke-${substr(sha256(jsonencode([local.release_image[each.value.image], each.value.env, local.health_check_script])), 0, 12)}"
-    namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
-  }
+  name            = "smoke-${substr(sha256(jsonencode([local.release_image[each.value.image], each.value.env, local.health_check_script])), 0, 12)}"
+  namespace       = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
+  labels          = { "app.kubernetes.io/name" = "smoke" }
+  service_account = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
 
-  spec {
-    backoff_limit           = 0
-    active_deadline_seconds = 300
+  container_name = "smoke"
+  image          = local.release_image[each.value.image]
+  command        = ["/bin/sh"]
+  args           = ["-c", local.health_check_script]
+  env            = each.value.env
+  service_token  = each.value.audience
+  service_ca     = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
+  # The script keeps the service's answer here.
+  tmp_size  = "1Mi"
+  resources = { cpu = "50m", memory = "64Mi" }
 
-    template {
-      metadata {
-        labels = { "app.kubernetes.io/name" = "smoke" }
-      }
-
-      spec {
-        restart_policy                  = "Never"
-        service_account_name            = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
-        automount_service_account_token = false
-        enable_service_links            = false
-
-        security_context {
-          run_as_non_root = true
-          run_as_user     = 65532
-          run_as_group    = 65532
-
-          seccomp_profile {
-            type = "RuntimeDefault"
-          }
-        }
-
-        container {
-          name    = "smoke"
-          image   = local.release_image[each.value.image]
-          command = ["/bin/sh"]
-          args    = ["-c", local.health_check_script]
-
-          dynamic "env" {
-            for_each = each.value.env
-
-            content {
-              name  = env.key
-              value = env.value
-            }
-          }
-
-          dynamic "volume_mount" {
-            for_each = each.value.audience == null ? [] : ["service-token"]
-
-            content {
-              name       = volume_mount.value
-              mount_path = "/var/run/secrets/tokens"
-              read_only  = true
-            }
-          }
-
-          volume_mount {
-            name       = "service-ca"
-            mount_path = "/etc/service-ca"
-            read_only  = true
-          }
-
-          volume_mount {
-            name       = "tmp"
-            mount_path = "/tmp"
-          }
-
-          resources {
-            requests = { cpu = "50m", memory = "64Mi" }
-            limits   = { memory = "64Mi" }
-          }
-
-          security_context {
-            run_as_non_root            = true
-            allow_privilege_escalation = false
-            read_only_root_filesystem  = true
-
-            capabilities {
-              drop = ["ALL"]
-            }
-          }
-        }
-
-        dynamic "volume" {
-          for_each = each.value.audience == null ? [] : [each.value.audience]
-
-          content {
-            name = "service-token"
-
-            projected {
-              sources {
-                service_account_token {
-                  audience = volume.value
-                  path     = volume.value
-                }
-              }
-            }
-          }
-        }
-
-        # Only the CA's certificate, which trust-manager keeps current.
-        volume {
-          name = "service-ca"
-
-          config_map {
-            name = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
-
-            items {
-              key  = "ca.crt"
-              path = "ca.crt"
-            }
-          }
-        }
-
-        # The script keeps the service's answer here.
-        volume {
-          name = "tmp"
-
-          empty_dir {
-            medium     = "Memory"
-            size_limit = "1Mi"
-          }
-        }
-      }
-    }
-  }
-
-  wait_for_completion = true
-
-  timeouts {
-    create = "6m"
-  }
+  active_deadline_seconds = 300
+  timeout                 = "6m"
 
   # Each check needs its service rolled out and reachable, Authentication's mail relay included.
   depends_on = [module.authentication_rest, module.genai_grpc, module.json_keys_grpc, module.json_keys_rest, module.narrative_engine_rest, module.profile_rest, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
@@ -221,150 +109,31 @@ resource "kubernetes_job_v1" "smoke" {
 # The CronJob runs the same check on a schedule, as health, or health-<workload> for a service's
 # second API. The script retries for two minutes, so a failed run means the service failed for that
 # long.
-resource "kubernetes_cron_job_v1" "health" {
+module "health" {
+  source   = "../../../modules/cluster-job"
   for_each = var.custom_resources ? local.health_checks : {}
 
-  metadata {
-    name      = each.value.cron_job
-    namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
-  }
+  name      = each.value.cron_job
+  namespace = kubernetes_namespace_v1.service[each.value.service].metadata[0].name
+  schedule  = "*/5 * * * *"
 
-  spec {
-    schedule           = "*/5 * * * *"
-    timezone           = "Etc/UTC"
-    concurrency_policy = "Forbid"
+  # As the smoke Job's pods.
+  labels          = { "app.kubernetes.io/name" = "smoke" }
+  service_account = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
 
-    # Kubernetes keeps the last failed run, and the CronJob the last successful one. Each kept run
-    # holds its pod and that pod's logs.
-    successful_jobs_history_limit = 1
+  container_name = "health"
+  image          = local.release_image[each.value.image]
+  command        = ["/bin/sh"]
+  args           = ["-c", local.health_check_script]
+  env            = each.value.env
+  service_token  = each.value.audience
+  service_ca     = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
+  tmp_size       = "1Mi"
+  resources      = { cpu = "50m", memory = "64Mi" }
 
-    job_template {
-      metadata {}
+  active_deadline_seconds = 300
 
-      spec {
-        backoff_limit           = 0
-        active_deadline_seconds = 300
-
-        # As the smoke Job's pods.
-        template {
-          metadata {
-            labels = { "app.kubernetes.io/name" = "smoke" }
-          }
-
-          spec {
-            restart_policy                  = "Never"
-            service_account_name            = kubernetes_service_account_v1.smoke[each.value.service].metadata[0].name
-            automount_service_account_token = false
-            enable_service_links            = false
-
-            security_context {
-              run_as_non_root = true
-              run_as_user     = 65532
-              run_as_group    = 65532
-
-              seccomp_profile {
-                type = "RuntimeDefault"
-              }
-            }
-
-            container {
-              name    = "health"
-              image   = local.release_image[each.value.image]
-              command = ["/bin/sh"]
-              args    = ["-c", local.health_check_script]
-
-              dynamic "env" {
-                for_each = each.value.env
-
-                content {
-                  name  = env.key
-                  value = env.value
-                }
-              }
-
-              dynamic "volume_mount" {
-                for_each = each.value.audience == null ? [] : ["service-token"]
-
-                content {
-                  name       = volume_mount.value
-                  mount_path = "/var/run/secrets/tokens"
-                  read_only  = true
-                }
-              }
-
-              volume_mount {
-                name       = "service-ca"
-                mount_path = "/etc/service-ca"
-                read_only  = true
-              }
-
-              volume_mount {
-                name       = "tmp"
-                mount_path = "/tmp"
-              }
-
-              resources {
-                requests = { cpu = "50m", memory = "64Mi" }
-                limits   = { memory = "64Mi" }
-              }
-
-              security_context {
-                run_as_non_root            = true
-                allow_privilege_escalation = false
-                read_only_root_filesystem  = true
-
-                capabilities {
-                  drop = ["ALL"]
-                }
-              }
-            }
-
-            dynamic "volume" {
-              for_each = each.value.audience == null ? [] : [each.value.audience]
-
-              content {
-                name = "service-token"
-
-                projected {
-                  sources {
-                    service_account_token {
-                      audience = volume.value
-                      path     = volume.value
-                    }
-                  }
-                }
-              }
-            }
-
-            # Only the CA's certificate, which trust-manager keeps current.
-            volume {
-              name = "service-ca"
-
-              config_map {
-                name = kubernetes_manifest.service_trust_bundle.manifest.metadata.name
-
-                items {
-                  key  = "ca.crt"
-                  path = "ca.crt"
-                }
-              }
-            }
-
-            volume {
-              name = "tmp"
-
-              empty_dir {
-                medium     = "Memory"
-                size_limit = "1Mi"
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_job_v1.smoke]
+  depends_on = [module.smoke]
 }
 
 # GenAI's provider check makes one real OpenAI call, as GenAI's smoke identity. It runs once for each
@@ -396,6 +165,8 @@ locals {
   })
 }
 
+# The cluster-job module's Jobs plan every change to their spec, and a lifecycle argument cannot vary
+# per caller, so this Job writes its own pods.
 resource "kubernetes_job_v1" "provider_check" {
   # Only a new revision runs the check again: a new image, setting or downtime leaves the finished Job
   # alone. A failed Job stays tainted, so the next deploy runs it again.
@@ -516,4 +287,64 @@ resource "kubernetes_job_v1" "provider_check" {
 
   # The call needs GenAI's server rolled out and its way to OpenAI.
   depends_on = [module.genai_grpc, kubernetes_network_policy_v1.smoke, kubernetes_manifest.internet_egress]
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["authentication"]
+  to   = module.smoke["authentication"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["genai"]
+  to   = module.smoke["genai"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["json-keys"]
+  to   = module.smoke["json-keys"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["json-keys-rest"]
+  to   = module.smoke["json-keys-rest"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["narrative-engine"]
+  to   = module.smoke["narrative-engine"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_job_v1.smoke["profile"]
+  to   = module.smoke["profile"].kubernetes_job_v1.job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["authentication"]
+  to   = module.health["authentication"].kubernetes_cron_job_v1.cron_job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["genai"]
+  to   = module.health["genai"].kubernetes_cron_job_v1.cron_job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["json-keys"]
+  to   = module.health["json-keys"].kubernetes_cron_job_v1.cron_job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["json-keys-rest"]
+  to   = module.health["json-keys-rest"].kubernetes_cron_job_v1.cron_job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["narrative-engine"]
+  to   = module.health["narrative-engine"].kubernetes_cron_job_v1.cron_job
+}
+
+moved {
+  from = kubernetes_cron_job_v1.health["profile"]
+  to   = module.health["profile"].kubernetes_cron_job_v1.cron_job
 }

@@ -79,5 +79,5 @@ module "authentication_rest" {
   labels          = local.database_clients
   pod_annotations = local.database_client_annotations
 
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
+  depends_on = [module.migrations, kubernetes_manifest.secrets]
 }

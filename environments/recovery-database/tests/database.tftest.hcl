@@ -67,16 +67,16 @@ run "checks_every_restored_database" {
 
   assert {
     condition = (
-      keys(kubernetes_job_v1.check) == keys(kubernetes_manifest.database) &&
-      alltrue([for check in kubernetes_job_v1.check : check.wait_for_completion && check.spec[0].backoff_limit == 0])
+      keys(module.check) == keys(kubernetes_manifest.database) &&
+      alltrue([for check in module.check : check.job.wait_for_completion && check.job.spec[0].backoff_limit == 0])
     )
     error_message = "Each restored database must pass its check once for the apply to succeed."
   }
 
   assert {
     condition = (
-      strcontains(kubernetes_job_v1.check["genai"].spec[0].template[0].spec[0].container[0].command[4], "cron.job") &&
-      !strcontains(kubernetes_job_v1.check["json-keys"].spec[0].template[0].spec[0].container[0].command[4], "cron.job")
+      strcontains(module.check["genai"].job.spec[0].template[0].spec[0].container[0].command[4], "cron.job") &&
+      !strcontains(module.check["json-keys"].job.spec[0].template[0].spec[0].container[0].command[4], "cron.job")
     )
     error_message = "Only a database that runs pg_cron must bring its schedules back."
   }
@@ -88,9 +88,9 @@ run "passes_the_check_sql_through_kubernetes_intact" {
   command = plan
 
   assert {
-    condition = alltrue([for check in kubernetes_job_v1.check :
-      !strcontains(check.spec[0].template[0].spec[0].container[0].command[4], "$$") &&
-      strcontains(check.spec[0].template[0].spec[0].container[0].command[4], "DO $check$")
+    condition = alltrue([for check in module.check :
+      !strcontains(check.job.spec[0].template[0].spec[0].container[0].command[4], "$$") &&
+      strcontains(check.job.spec[0].template[0].spec[0].container[0].command[4], "DO $check$")
     ])
     error_message = "Each check must quote its blocks with a tag: Kubernetes collapses a doubled dollar sign in a container's command."
   }

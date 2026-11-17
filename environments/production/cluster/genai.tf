@@ -59,7 +59,7 @@ module "genai_grpc" {
   # requests it sends OpenAI: a hard bound on spend and load.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
+  depends_on = [module.migrations, kubernetes_manifest.secrets]
 }
 
 module "genai_sweep" {
@@ -82,5 +82,5 @@ module "genai_sweep" {
   # leader's pod or node is lost.
   replicas = { min = 2, max = 3 }
 
-  depends_on = [kubernetes_job_v1.migrations, kubernetes_manifest.secrets]
+  depends_on = [module.migrations, kubernetes_manifest.secrets]
 }

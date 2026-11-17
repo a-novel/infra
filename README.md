@@ -45,6 +45,7 @@ Disabling `deploy.yaml` [freezes production](docs/runbooks/deployments.md#freeze
 | `environments/production/github`           | Both organizations' repositories, rulesets, teams and environments.               |
 | `environments/recovery-cluster`            | A recovery drill's throwaway cluster, which reads the restored services' backups. |
 | `environments/recovery-database`           | A recovery drill's databases, restored from production's backups and checked.     |
+| `modules/cluster-job`                      | One Job or CronJob on the cluster, whose restricted pods never retry.             |
 | `modules/cluster-workload`                 | One gRPC or HTTP server on the cluster: its identity, pods, Service and scaling.  |
 | `modules/database-operator`                | cert-manager, CloudNativePG and its Barman Cloud plugin, for the cluster.         |
 | `modules/github-organization`              | One organization's repositories and their config, for the GitHub root.            |
