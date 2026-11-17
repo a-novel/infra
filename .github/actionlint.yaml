@@ -5,15 +5,13 @@ paths:
       # GitHub and zizmor validate this same-repository form; remote-action ref errors remain visible.
       - '^specifying action "\$/\.github/actions/[a-z0-9/-]+" in invalid format because ref is missing\.'
       # Remove after actionlint ships https://github.com/rhysd/actionlint/pull/668. Its bundled
-      # metadata predates `client-id` in actions/create-github-app-token@v3, which the managed
-      # approval workflow uses; every other input error from the action stays visible.
+      # metadata predates `client-id` in actions/create-github-app-token@v3, which downtime.yaml,
+      # pin-release.yaml and refresh-google-ranges.yaml use; every other input error from the
+      # action stays visible.
       - '^missing input "app-id" which is required by action "actions/create-github-app-token@v3"\.'
       - '^input "client-id" is not defined in action "actions/create-github-app-token@v3"\.'
-      # Remove after actionlint ships https://github.com/rhysd/actionlint/pull/654. GitHub accepts
-      # `queue` in a concurrency group; every other unknown concurrency key stays visible.
-      - '^unexpected key "queue" for "concurrency" section\.'
-  # These managed workflows quote GraphQL $variables on purpose. The workflows repository
-  # shellchecks the same templates with SC2016 off; every other finding stays visible here.
-  .github/workflows/{auto-approve-dependabot,recover-prs}.yaml:
+  # This managed workflow quotes GraphQL $variables on purpose. The workflows repository
+  # shellchecks the same template with SC2016 off; every other finding stays visible here.
+  .github/workflows/recover-prs.yaml:
     ignore:
       - "^shellcheck reported issue in this script: SC2016:"
