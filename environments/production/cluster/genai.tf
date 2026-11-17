@@ -26,8 +26,6 @@ locals {
     POSTGRES_MAX_OPEN_CONNS = "4"
     POSTGRES_MAX_IDLE_CONNS = "4"
     REST_PORT               = "8080"
-    # The sweep runs every SWEEP_INTERVAL on its own, so nothing posts to it.
-    SWEEP_TICKER = "true"
   })
 }
 
