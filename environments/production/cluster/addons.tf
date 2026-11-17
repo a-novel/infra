@@ -45,7 +45,7 @@ resource "helm_release" "external_secrets" {
   namespace  = kubernetes_namespace_v1.addon["external-secrets"].metadata[0].name
   repository = "https://charts.external-secrets.io"
   chart      = "external-secrets"
-  version    = "2.14.0"
+  version    = "2.15.0"
 
   values = [yamlencode({
     image          = local.images.external_secrets
