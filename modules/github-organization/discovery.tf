@@ -57,13 +57,13 @@ locals {
 
   discovered = {
     for name in local.ready : name => {
-      # A job's check is its name, else its id. Reporting jobs and those that run only on master gate
-      # nothing. An always-required check wins over a job of the same name.
+      # A job's check is its name, else its id. Reporting jobs, and those that run only on master or
+      # only on a tag, gate no pull request. An always-required check wins over a job of the same name.
       checks = merge(
         {
           for context, ids in {
             for id, job in try(local.workflows["${name}:.github/workflows/main.yaml"].jobs, {}) : try(tostring(job.name), id) => id...
-            if !startswith(id, "report-") && !strcontains(try(tostring(job["if"]), ""), "github.ref == 'refs/heads/master'")
+            if !startswith(id, "report-") && !can(regex("github\\.ref == 'refs/heads/master'|github\\.ref_type == 'tag'", try(tostring(job["if"]), "")))
           } : context => local.actions_app
         },
         {

@@ -32,11 +32,14 @@ mock_provider "github" {
   #         name: governance
   #       steps:
   #         - run: sign "${{ secrets.AGENT_BOT_PRIVATE_KEY }}"
+  #     publish-js:
+  #       if: github.ref_type == 'tag'
+  #       runs-on: ubuntu-24.04
   mock_data "github_rest_api" {
     defaults = {
       code = 200
       body = <<-EOT
-        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICAgIGVudmlyb25tZW50OiAke3sgZ2l0aHViLmFjdG9yICE9IHZhcnMuQk9U\nICYmICdwbGFuJyB8fCAnJyB9fQogIHB1Ymxpc2g6CiAgICBpZjogZ2l0aHVi\nLmV2ZW50X25hbWUgPT0gJ3B1c2gnICYmIGdpdGh1Yi5yZWYgPT0gJ3JlZnMv\naGVhZHMvbWFzdGVyJwogICAgcnVucy1vbjogdWJ1bnR1LTI0LjA0CiAgICBl\nbnZpcm9ubWVudDoKICAgICAgbmFtZTogZ292ZXJuYW5jZQogICAgc3RlcHM6\nCiAgICAgIC0gcnVuOiBzaWduICIke3sgc2VjcmV0cy5BR0VOVF9CT1RfUFJJ\nVkFURV9LRVkgfX0iCg==\n", "encoding": "base64"}
+        {"content": "b246IHB1bGxfcmVxdWVzdApqb2JzOgogIGxpbnQtZ286CiAgICBuYW1lOiBs\naW50LWdvCiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHN0ZXBzOgog\nICAgICAtIHJ1bjogdXBsb2FkICIke3sgc2VjcmV0cy5DT0RFQ09WX1RPS0VO\nIH19IiAjIHNlY3JldHMuSU5fQV9DT01NRU5UCiAgcmVsZWFzZToKICAgIHJ1\nbnMtb246IHVidW50dS0yNC4wNAogICAgZW52aXJvbm1lbnQ6IHJlbGVhc2UK\nICByZXBvcnQtY292ZXJhZ2U6CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQK\nICAgIGVudmlyb25tZW50OiAke3sgZ2l0aHViLmFjdG9yICE9IHZhcnMuQk9U\nICYmICdwbGFuJyB8fCAnJyB9fQogIHB1Ymxpc2g6CiAgICBpZjogZ2l0aHVi\nLmV2ZW50X25hbWUgPT0gJ3B1c2gnICYmIGdpdGh1Yi5yZWYgPT0gJ3JlZnMv\naGVhZHMvbWFzdGVyJwogICAgcnVucy1vbjogdWJ1bnR1LTI0LjA0CiAgICBl\nbnZpcm9ubWVudDoKICAgICAgbmFtZTogZ292ZXJuYW5jZQogICAgc3RlcHM6\nCiAgICAgIC0gcnVuOiBzaWduICIke3sgc2VjcmV0cy5BR0VOVF9CT1RfUFJJ\nVkFURV9LRVkgfX0iCiAgcHVibGlzaC1qczoKICAgIGlmOiBnaXRodWIucmVm\nX3R5cGUgPT0gJ3RhZycKICAgIHJ1bnMtb246IHVidW50dS0yNC4wNAo=\n", "encoding": "base64"}
       EOT
     }
   }
@@ -135,7 +138,7 @@ run "derives_config_from_the_workflows" {
     condition = local.discovered["service-genai"].checks == {
       lint-go = 15368, release = 15368, merge-gate = 100, epic-freeze = 100, check-dependencies = 15368, review-gate = 100
     }
-    error_message = "The required checks are the always set, bound to its Apps, plus every main.yaml job but reporting and master-only ones."
+    error_message = "The required checks are the always set, bound to its Apps, plus every main.yaml job but reporting, master-only and tag-only ones."
   }
 
   assert {
