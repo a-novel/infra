@@ -17,7 +17,6 @@ on:
       - renovate.json
       - .dockerignore
       - .gitignore
-      - .gitleaks.toml
       - .golangci.yaml
       - .prettierignore
       - .tflint.hcl
