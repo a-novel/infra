@@ -70,7 +70,7 @@ module "authentication_rest" {
   http_health_path = "/v2/ping"
   env              = local.authentication_env
   secret_env       = local.authentication_secret_env
-  service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_TOKEN_PATH" }
+  service_tokens   = { (local.json_keys_env.SERVICE_TOKEN_AUDIENCE) = "SERVICE_JSON_KEYS_TOKEN_PATH" }
   ca_secret        = kubernetes_manifest.database_server_certificate["authentication"].manifest.spec.secretName
   # Argon2 bursts above the request: the pod has no CPU limit, and a third pod takes a long burst.
   # Two keep sign-in up through a lost pod or node. Each hashes one password at a time.
