@@ -30,28 +30,3 @@ module "migrations" {
 
   depends_on = [kubernetes_manifest.database, kubernetes_network_policy_v1.database_clients]
 }
-
-moved {
-  from = kubernetes_job_v1.migrations["authentication"]
-  to   = module.migrations["authentication"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.migrations["genai"]
-  to   = module.migrations["genai"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.migrations["json-keys"]
-  to   = module.migrations["json-keys"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.migrations["narrative-engine"]
-  to   = module.migrations["narrative-engine"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.migrations["profile"]
-  to   = module.migrations["profile"].kubernetes_job_v1.job
-}

@@ -395,28 +395,3 @@ resource "kubernetes_manifest" "database_schedule" {
     replace_triggered_by = [time_sleep.database_lineage]
   }
 }
-
-moved {
-  from = kubernetes_job_v1.database_grants["authentication"]
-  to   = module.database_grants["authentication"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.database_grants["genai"]
-  to   = module.database_grants["genai"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.database_grants["json-keys"]
-  to   = module.database_grants["json-keys"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.database_grants["narrative-engine"]
-  to   = module.database_grants["narrative-engine"].kubernetes_job_v1.job
-}
-
-moved {
-  from = kubernetes_job_v1.database_grants["profile"]
-  to   = module.database_grants["profile"].kubernetes_job_v1.job
-}
