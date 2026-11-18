@@ -122,13 +122,15 @@ runs:
         # and then while OpenTofu reads the state, the credential exchange in front of it does too
         # ("credentials: status code 503"), GitHub's release downloads do while init fetches the
         # providers' checksums ("502 Bad Gateway returned from"), and a lost answer to the lock's
-        # write leaves this runner's own lock (own-lock.mjs), which transient releases. OpenTofu
+        # write leaves this runner's own lock (own-lock.mjs), which transient releases. Plans that
+        # start together share Resource Manager's per-minute read quota, which answers "googleapi:
+        # Error 429" once they spend it, and the two-minute retry outlasts the minute. OpenTofu
         # wraps its messages, so the check reads them as one line.
         transient() {
           local id
           id="$(node .github/scripts/own-lock.mjs "$errors")" || return 1
           if [ -z "$id" ]; then
-            tr '\n' ' ' <"$errors" | grep -Eq '"code": 50[234]|status code 50[234]|UNAVAILABLE|50[234] [A-Za-z ]+ returned from'
+            tr '\n' ' ' <"$errors" | grep -Eq '"code": 50[234]|status code 50[234]|UNAVAILABLE|50[234] [A-Za-z ]+ returned from|googleapi: Error 429'
             return
           fi
           echo "::warning::tofu failed on this runner's own state lock $id; releasing it."
