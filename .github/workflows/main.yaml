@@ -116,7 +116,7 @@ jobs:
           # renovate: datasource=npm depName=prettier
           prettier_version: 3.10.1
           # renovate: datasource=npm depName=renovate
-          renovate_version: 44.240.0
+          renovate_version: 44.244.2
         run: |
           set -euo pipefail
           npx --yes "prettier@$prettier_version" --no-config --no-editorconfig --check .
