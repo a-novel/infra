@@ -103,6 +103,11 @@ repositories = {
     description = "A template repository for quickstarting client platforms."
     overrides   = { is_template = true }
   }
+  "a-novel/plugins-narrative-engine" = {
+    class       = "library"
+    description = "The plugins of the Narrative Engine."
+    topics      = ["agora-storyverse", "creative-writing", "narrative-engine", "plugins", "storytelling", "svelte", "typescript"]
+  }
   "a-novel/service-authentication" = {
     class        = "service"
     description  = "Credentials manager and auth tokens public provider."
