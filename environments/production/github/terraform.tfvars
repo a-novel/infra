@@ -105,7 +105,7 @@ repositories = {
   }
   "a-novel/plugins-narrative-engine" = {
     class       = "library"
-    description = "The plugins of the Narrative Engine."
+    description = "A collection of baked-in plugins for the narrative engine."
     topics      = ["agora-storyverse", "creative-writing", "narrative-engine", "plugins", "storytelling", "svelte", "typescript"]
   }
   "a-novel/service-authentication" = {
