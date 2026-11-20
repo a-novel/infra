@@ -21,6 +21,8 @@ locals {
   # and backup name, and the database image each service's release file pins.
   production      = provider::terraform::decode_tfvars(file("${path.module}/../production/cluster/terraform.tfvars"))
   database_images = { for service in keys(local.production.databases) : service => provider::terraform::decode_tfvars(file("${path.module}/../production/cluster/releases/${service}.tfvars")).images.database }
+  # Each database's archive of its current major, named as production's databases.tf names it.
+  archives = { for service, database in local.production.databases : service => database.major > 18 ? "${local.production.backup_server_name}-pg${database.major}" : local.production.backup_server_name }
 
   # Each image pulls through the drill's caches, as production's pull through its own. The database
   # images go by their service's name. The drill runs only the database operators and the databases,
@@ -88,7 +90,7 @@ resource "kubernetes_manifest" "image" {
     apiVersion = "postgresql.cnpg.io/v1"
     kind       = "ImageCatalog"
     metadata   = { name = "drill", namespace = kubernetes_namespace_v1.drill[each.key].metadata[0].name }
-    spec       = { images = [{ major = 18, image = "${local.images[each.key].repository}:${local.images[each.key].tag}" }] }
+    spec       = { images = [{ major = local.production.databases[each.key].major, image = "${local.images[each.key].repository}:${local.images[each.key].tag}" }] }
   }
 
   depends_on = [module.database_operator]
@@ -126,7 +128,7 @@ resource "kubernetes_manifest" "database" {
     metadata   = { name = "drill", namespace = kubernetes_namespace_v1.drill[each.key].metadata[0].name }
     spec = {
       instances       = 1
-      imageCatalogRef = { apiGroup = "postgresql.cnpg.io", kind = "ImageCatalog", name = kubernetes_manifest.image[each.key].manifest.metadata.name, major = 18 }
+      imageCatalogRef = { apiGroup = "postgresql.cnpg.io", kind = "ImageCatalog", name = kubernetes_manifest.image[each.key].manifest.metadata.name, major = local.production.databases[each.key].major }
       postgresUID     = 999
       postgresGID     = 999
       resources       = { requests = { cpu = local.production.databases[each.key].cpu, memory = local.production.databases[each.key].memory }, limits = { memory = local.production.databases[each.key].memory } }
@@ -152,7 +154,7 @@ resource "kubernetes_manifest" "database" {
 
       externalClusters = [{
         name   = "production"
-        plugin = { name = module.database_operator.barman_plugin, parameters = { barmanObjectName = kubernetes_manifest.backups[each.key].manifest.metadata.name, serverName = local.production.backup_server_name } }
+        plugin = { name = module.database_operator.barman_plugin, parameters = { barmanObjectName = kubernetes_manifest.backups[each.key].manifest.metadata.name, serverName = local.archives[each.key] } }
       }]
     }
   }

@@ -57,12 +57,14 @@ grafana_cloud = {
 # archiving stalls. GenAI's purge bounds its payloads of up to 24 MiB. Narrative-engine starts empty,
 # and caps each project at 16 MiB. Profile starts empty too, and a picture weighs about 40 KB: ten
 # thousand pictures fill 0.4 GB.
+# `major` is the PostgreSQL major of the database image its service's release file pins. It rises in
+# the same change as the first image of the next major, during that service's planned downtime.
 databases = {
-  authentication   = { cpu = "100m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  genai            = { cpu = "100m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"] }
-  json-keys        = { cpu = "100m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  narrative-engine = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
-  profile          = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"] }
+  authentication   = { cpu = "100m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+  genai            = { cpu = "100m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"], major = 18 }
+  json-keys        = { cpu = "100m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+  narrative-engine = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+  profile          = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
 }
 
 # The services whose API pods share each rate limit's budget through a Valkey of their own

@@ -46,13 +46,14 @@ variable "custom_resources" {
 }
 
 variable "databases" {
-  description = "Each service's database: each instance's CPU and memory, its volume, its connection ceiling and its extensions."
+  description = "Each service's database: each instance's CPU and memory, its volume, its connection ceiling, its extensions and the PostgreSQL major its image runs."
   type = map(object({
     cpu             = string
     memory          = string
     storage         = string
     max_connections = number
     extensions      = list(string)
+    major           = number
   }))
 
   validation {

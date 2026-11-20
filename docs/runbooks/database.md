@@ -53,19 +53,41 @@ disks.
 
 ## PostgreSQL major upgrades
 
-A major upgrade stops the database. CloudNativePG shuts every instance down and runs `pg_upgrade`. A
-plan that raises `major` in a database's `imageCatalogRef` needs the `allow-downtime` label and a
-planned downtime listing `service-<root>.database` in progress. The deploy applies it only while
-that downtime runs.
+A major upgrade stops the database. CloudNativePG shuts every instance down and runs `pg_upgrade`.
+A database's `major`, in the cluster root's `databases`, names the major of its image. It rises in
+the pull request that pins the service's first database image of the next major, since either
+change alone leaves the database unable to start. That release is titled breaking, so its pin waits
+with the `breaking-release` label instead of merging itself. A plan that raises `major` needs the
+`allow-downtime` label and a planned downtime listing `service-<root>.database` in progress. The
+deploy applies it only while that downtime runs.
 
-WAL from the old major recovers nothing past the upgrade. The next base backup after it is the first
-one the new major can recover from.
+Each major archives apart: `pg_upgrade` restarts the timeline at 1, whose WAL would overwrite the
+former major's. From PostgreSQL 19 on, a database archives under `<lineage>-pg<major>`, such as
+`database-production-pg19`, and the deploy takes a base backup into it once the database serves.
+The former archive recovers nothing past the upgrade, and the recovery drill restores the current
+major's.
 
 1. **Schedule a planned downtime** for the service, as
    [Schedule a downtime](downtime.md#schedule-or-change-a-downtime) describes. List the services
    that depend on it too. Start it after the 03:00 UTC base backup, so the upgrade begins from a
    fresh one.
-2. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
+2. **Raise the database's `major` on the release's pin**, from a checkout of this repository. The
+   pin's branch is `chore/deps/service-<root>`:
+
+   ```bash
+   SERVICE="<root, such as genai>"
+   MAJOR="<the new major, such as 19>"
+   git fetch origin "chore/deps/service-$SERVICE"
+   git switch --detach "origin/chore/deps/service-$SERVICE"
+   sed -i -E "s/^(  $SERVICE +=.*major = )[0-9]+ }/\1$MAJOR }/" environments/production/cluster/terraform.tfvars
+   git diff
+   git commit -am "chore(cluster): upgrade the $SERVICE database to PostgreSQL $MAJOR"
+   git push origin "HEAD:chore/deps/service-$SERVICE"
+   ```
+
+   The diff changes that one line. The pin's plan now flags the upgrade, and fails until step 3.
+
+3. **Once the downtime has started, add the `allow-downtime` label** to the pull request. Its checks
    re-run and pass.
 
    ```bash
@@ -86,25 +108,29 @@ one the new major can recover from.
    A push removes the label, because the label approved the plans of an earlier commit. Review the
    new plans and add it again.
 
-3. **Approve and merge.** A maintainer or admin reviews and approves the pull request. An admin who
-   opened it may record the approval themselves instead:
-
-   ```bash
-   gh workflow run approve-pr.yaml --repo a-novel/infra -f pull_request="$PR"
-   ```
-
-   Once the approval shows on the pull request, merge it:
+4. **Approve and merge.** A maintainer or admin other than the one who pushed step 2 reviews and
+   approves the pull request, then merges it:
 
    ```bash
    gh pr merge "$PR" --repo a-novel/infra
    ```
 
+   The last push counts as yours, so your own approval does not count. Alone, an admin merges it
+   past that rule:
+
+   ```bash
+   gh pr merge "$PR" --repo a-novel/infra --admin
+   ```
+
    The deploy applies the upgrade and waits until both instances serve and WAL reaches Barman.
 
-4. **Check the database**, as [Inspect a database](#inspect-a-database) shows. The deploy's smoke
+5. **Check the database**, as [Inspect a database](#inspect-a-database) shows. The deploy's smoke
    checks skip while the downtime runs, since the services refuse work.
-5. **Clear the downtime**, as [Clear the downtime](downtime.md#clear-the-downtime) describes. Its
+6. **Clear the downtime**, as [Clear the downtime](downtime.md#clear-the-downtime) describes. Its
    deploy restarts the services and runs the smoke checks the downtime skipped.
+7. **Retire the former archive** once every database runs the new major and nothing needs the
+   former major's backups. List its name in bootstrap's `retired_barman_lineages`, as
+   [Lineages](#lineages) describes.
 
 An upgrade merged before its downtime started fails its deploy, and every later deploy that applies
 the cluster root. Nothing starts a deploy when a downtime begins, so once it has started, run one by

@@ -402,6 +402,37 @@ run "fits_each_database_in_its_connections" {
   }
 }
 
+# GenAI moves to PostgreSQL 19 while the others stay on 18.
+run "archives_each_major_apart" {
+  command = plan
+
+  variables {
+    databases = {
+      authentication   = { cpu = "100m", memory = "1536Mi", storage = "30Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+      genai            = { cpu = "100m", memory = "6Gi", storage = "20Gi", max_connections = 150, extensions = ["pg_cron", "uuid-ossp"], major = 19 }
+      json-keys        = { cpu = "100m", memory = "1536Mi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+      narrative-engine = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+      profile          = { cpu = "100m", memory = "1Gi", storage = "10Gi", max_connections = 50, extensions = ["uuid-ossp"], major = 18 }
+    }
+  }
+
+  assert {
+    condition = alltrue([for service, database in kubernetes_manifest.database :
+      database.manifest.spec.imageCatalogRef.major == var.databases[service].major &&
+      one(kubernetes_manifest.database_image[service].manifest.spec.images).major == var.databases[service].major
+    ])
+    error_message = "Each database must run the major its settings name, from its own catalog."
+  }
+
+  assert {
+    condition = (
+      one(kubernetes_manifest.database["profile"].manifest.spec.plugins).parameters.serverName == var.backup_server_name &&
+      one(kubernetes_manifest.database["genai"].manifest.spec.plugins).parameters.serverName != var.backup_server_name
+    )
+    error_message = "A database's new major must archive apart from its former one, which keeps the lineage's path."
+  }
+}
+
 run "runs_each_release_from_its_private_repository" {
   command = plan
 

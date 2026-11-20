@@ -253,10 +253,11 @@ data. Each bucket is versioned, refuses to delete an object younger than 7 days,
 objects 7 more days. Only that database's Kubernetes service account, `database` in the service's
 namespace, writes it, through Workload Identity.
 
-Each database archives under the cluster root's `backup_server_name`, its **lineage**. A new name
-recreates every database empty, as [Databases](runbooks/database.md#lineages) describes, and
-bootstrap's `retired_barman_lineages` expires the former lineage 15 days after its objects were
-written. While a [recovery drill](runbooks/recovery.md) runs, each database it restores reads its
+Each database archives under the cluster root's `backup_server_name`, its **lineage**, and from
+PostgreSQL 19 on under `<lineage>-pg<major>`, since each major
+[archives apart](runbooks/database.md#postgresql-major-upgrades). A new name recreates every
+database empty, as [Databases](runbooks/database.md#lineages) describes, and bootstrap's
+`retired_barman_lineages` expires the former lineage 15 days after its objects were written. While a [recovery drill](runbooks/recovery.md) runs, each database it restores reads its
 own service's bucket through the `barmanReader` role, and writes none.
 
 ## Secrets
