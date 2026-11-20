@@ -33,7 +33,7 @@ locals {
     readinessProbe = { enabled = true, customProbe = local.counter_store_probe }
     # A rollout starts the new pod before it stops the old one, so the store keeps serving.
     deploymentStrategy = "RollingUpdate"
-    valkeyConfig       = <<-EOT
+    extraConfig        = <<-EOT
       maxmemory 64mb
       maxmemory-policy allkeys-lru
       save ""
