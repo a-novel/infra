@@ -661,9 +661,9 @@ run "keeps_each_services_counters_in_a_locked_store_of_its_own" {
 
   assert {
     condition = (
-      !try(local.counter_store_values.dataStorage.enabled, false) &&
+      !try(local.counter_store_values.persistence.enabled, false) &&
       !try(local.counter_store_values.replica.enabled, false) &&
-      length(setintersection(split("\n", local.counter_store_values.valkeyConfig), ["save \"\"", "appendonly no"])) == 2
+      length(setintersection(split("\n", local.counter_store_values.extraConfig), ["save \"\"", "appendonly no"])) == 2
     )
     error_message = "The counter store must keep nothing on disk: no volume, no replica, no snapshot and no append-only file."
   }
