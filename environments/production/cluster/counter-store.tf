@@ -33,7 +33,7 @@ locals {
     readinessProbe = { enabled = true, customProbe = local.counter_store_probe }
     # A rollout starts the new pod before it stops the old one, so the store keeps serving.
     deploymentStrategy = "RollingUpdate"
-    valkeyConfig       = <<-EOT
+    extraConfig        = <<-EOT
       maxmemory 64mb
       maxmemory-policy allkeys-lru
       save ""
@@ -119,7 +119,7 @@ resource "helm_release" "counter_store" {
   namespace  = local.namespace[each.key]
   repository = "https://valkey.io/valkey-helm/"
   chart      = "valkey"
-  version    = "0.12.1"
+  version    = "1.0.0"
 
   values = [yamlencode(local.counter_store_values)]
 
