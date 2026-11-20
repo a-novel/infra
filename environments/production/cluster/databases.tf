@@ -17,6 +17,10 @@ locals {
   # A client's pods read the database's generated password at start, so they roll with each new
   # lineage, once its database serves.
   database_client_annotations = { "a-novel.io/database-lineage" = var.backup_server_name }
+  # Each PostgreSQL major archives apart: pg_upgrade restarts the timeline at 1, whose WAL would
+  # overwrite the former major's in a shared path. The lineage's first major, 18, archives under the
+  # lineage's own name. The recovery drill reads the same names.
+  database_archives = { for service, database in var.databases : service => database.major > 18 ? "${var.backup_server_name}-pg${database.major}" : var.backup_server_name }
 }
 
 # A new lineage replaces it, and so each database and its backup schedule. Its creation waits four
@@ -30,7 +34,8 @@ resource "time_sleep" "database_lineage" {
 }
 
 # CloudNativePG reads PostgreSQL's major version from an image's tag, and ours carry the service's
-# release version, so a catalog states it. Each image is the one its service's release file pins.
+# release version, so a catalog states it, from the database's `major`. Each image is the one its
+# service's release file pins.
 resource "kubernetes_manifest" "database_image" {
   for_each = var.custom_resources ? var.databases : {}
 
@@ -38,7 +43,7 @@ resource "kubernetes_manifest" "database_image" {
     apiVersion = "postgresql.cnpg.io/v1"
     kind       = "ImageCatalog"
     metadata   = { name = "postgresql", namespace = kubernetes_namespace_v1.service[each.key].metadata[0].name }
-    spec       = { images = [{ major = 18, image = local.release_image["${each.key}/database"] }] }
+    spec       = { images = [{ major = each.value.major, image = local.release_image["${each.key}/database"] }] }
   }
 }
 
@@ -285,7 +290,7 @@ resource "kubernetes_manifest" "database" {
     spec = merge(
       {
         instances           = 2
-        imageCatalogRef     = { apiGroup = "postgresql.cnpg.io", kind = "ImageCatalog", name = kubernetes_manifest.database_image[each.key].manifest.metadata.name, major = 18 }
+        imageCatalogRef     = { apiGroup = "postgresql.cnpg.io", kind = "ImageCatalog", name = kubernetes_manifest.database_image[each.key].manifest.metadata.name, major = each.value.major }
         postgresUID         = 999
         postgresGID         = 999
         primaryUpdateMethod = "switchover"
@@ -322,7 +327,7 @@ resource "kubernetes_manifest" "database" {
           }
         }
 
-        plugins = [{ name = module.database_operator.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = var.backup_server_name } }]
+        plugins = [{ name = module.database_operator.barman_plugin, isWALArchiver = true, parameters = { barmanObjectName = kubernetes_manifest.database_backups[each.key].manifest.metadata.name, serverName = local.database_archives[each.key] } }]
 
         # cert-manager's Secrets hold each certificate and the CA that signed it. The replica
         # authenticates with our CA's certificate, so the operator generates no client CA.
@@ -390,8 +395,9 @@ resource "kubernetes_manifest" "database_schedule" {
     }
   }
 
-  # Each new lineage starts with a base backup, so its data has a recovery point at once.
+  # Each new archive starts with a base backup, a new lineage's or a new major's, so its data has a
+  # recovery point at once.
   lifecycle {
-    replace_triggered_by = [time_sleep.database_lineage]
+    replace_triggered_by = [time_sleep.database_lineage, kubernetes_manifest.database[each.key].manifest.spec.plugins]
   }
 }

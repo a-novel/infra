@@ -6,10 +6,13 @@ def weakened:
   (.before.deletion_protection == true and .after.deletion_protection != true)
   or (.before.force_destroy == false and .after.force_destroy == true)
   or ((.before.deletion_policy // "DELETE") != "DELETE" and .after.deletion_policy == "DELETE");
-# Instance templates are immutable configuration, terraform_data holds only a run token, and a
-# finished Job only records its run, so replacing any of them deletes nothing that holds data.
+# Instance templates are immutable configuration, terraform_data holds only a run token, a
+# finished Job only records its run, and a database's backup schedule owns only the records of its
+# backups, whose data Barman keeps. Replacing any of them deletes nothing that holds data.
 def harmless_replacement:
-  (.type == "google_compute_instance_template" or .type == "terraform_data" or .type == "kubernetes_job_v1") and (.change.actions | index("create"));
+  (.type == "google_compute_instance_template" or .type == "terraform_data" or .type == "kubernetes_job_v1"
+    or (.type == "kubernetes_manifest" and .name == "database_schedule"))
+  and (.change.actions | index("create"));
 # CloudNativePG upgrades a database's PostgreSQL major in place, with every instance stopped until
 # pg_upgrade ends. Any other change to a database rolls by switchover.
 def major_upgrade:
