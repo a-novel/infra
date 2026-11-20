@@ -18,13 +18,22 @@ locals {
     tag        = local.image_parts[name].tag
   } }
 
+  # Each probe checks that Valkey answers a PING, without a password. The default user is off, so
+  # Valkey answers NOAUTH, which the probe accepts.
+  counter_store_probe = { exec = { command = ["sh", "-c", "r=$(valkey-cli ping 2>&1); case \"$r\" in PONG|NOAUTH*) exit 0;; esac; echo \"$r\"; exit 1"] } }
+
   # One pod, with redis_exporter beside Valkey for Alloy to scrape (alloy.tf). Once its 64 MiB fill,
   # Valkey evicts the least recently used counters first, which only loosens their limits.
   counter_store_values = {
     image          = local.counter_store_images.valkey
     resources      = { requests = { cpu = "50m", memory = "128Mi" }, limits = { memory = "128Mi" } }
     podAnnotations = { "k8s.grafana.com/scrape" = "true", "k8s.grafana.com/metrics.portName" = "metrics" }
-    valkeyConfig   = <<-EOT
+    startupProbe   = { customProbe = local.counter_store_probe }
+    livenessProbe  = { customProbe = local.counter_store_probe }
+    readinessProbe = { enabled = true, customProbe = local.counter_store_probe }
+    # A rollout starts the new pod before it stops the old one, so the store keeps serving.
+    deploymentStrategy = "RollingUpdate"
+    valkeyConfig       = <<-EOT
       maxmemory 64mb
       maxmemory-policy allkeys-lru
       save ""
