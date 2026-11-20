@@ -119,7 +119,7 @@ resource "helm_release" "counter_store" {
   namespace  = local.namespace[each.key]
   repository = "https://valkey.io/valkey-helm/"
   chart      = "valkey"
-  version    = "0.12.1"
+  version    = "1.0.0"
 
   values = [yamlencode(local.counter_store_values)]
 
