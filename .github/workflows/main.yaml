@@ -94,7 +94,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.87.1
+      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.87.2
 
   lint-repository:
     runs-on: ubuntu-24.04
@@ -127,7 +127,7 @@ jobs:
         run: node --test '.github/scripts/*.test.mjs'
 
       - name: Lint shell scripts
-        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.87.1
+        uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.87.2
         with:
           # actionlint below checks the workflows' steps but never reads a composite action.
           run_steps: .github/actions/*/action.yaml
@@ -143,7 +143,7 @@ jobs:
           pyflakes: false
 
       - name: Audit GitHub Actions security
-        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.87.1
+        uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.87.2
 
   # Each root's plan is its own required check. GitHub issues no OIDC token to
   # fork pull requests, so their plans fail until a maintainer pushes the branch.
