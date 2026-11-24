@@ -24,7 +24,7 @@ resource "helm_release" "cloudnative_pg" {
   namespace  = var.namespaces.cloudnative_pg
   repository = "https://cloudnative-pg.github.io/charts"
   chart      = "cloudnative-pg"
-  version    = "0.29.1"
+  version    = "0.29.2"
 
   values = [yamlencode({
     image = var.images.cloudnative_pg
