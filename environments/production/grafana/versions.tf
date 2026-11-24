@@ -10,7 +10,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "8.11.0"
+      version = "8.12.0"
     }
     # Grafana Labs' own provider covers the stack's alerting, dashboards and Frontend Observability.
     grafana = {
